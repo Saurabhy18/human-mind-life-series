@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0f1b2d;
+  --color-ink-soft: #1c2b42;
+  --color-paper: #faf7f1;
+  --color-cream: #f3ede2;
+  --color-line: #e4dccd;
+  --color-muted: #5d6675;
+  --color-gold: #b38b45;
+  --color-gold-dark: #8f6d31;
+  --color-gold-light: #e9d6ac;
+  --color-success: #1f7a4d;
+  --color-danger: #b42318;
+
+  --font-serif: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --animate-fade-up: fade-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-serif);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  ::selection {
+    background: var(--color-gold-light);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
+  summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@utility container-page {
+  @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+}
+
+@utility eyebrow {
+  @apply text-xs font-semibold tracking-[0.18em] text-gold-dark uppercase;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+@utility btn-primary {
+  @apply btn bg-ink text-paper shadow-sm hover:bg-ink-soft hover:shadow-md;
+}
+
+@utility btn-gold {
+  @apply btn bg-gold text-white shadow-sm hover:bg-gold-dark hover:shadow-md;
+}
+
+@utility btn-outline {
+  @apply btn border border-ink/20 bg-white/60 text-ink hover:border-ink/50 hover:bg-white;
+}
+
+@utility btn-light {
+  @apply btn border border-white/30 text-white hover:bg-white/10;
+}
+
+/* Prominent but understated "FREE" label for free books. */
+@utility free-badge {
+  @apply inline-flex items-center gap-1.5 rounded-full bg-success px-3 py-1 text-[0.7rem] font-bold tracking-[0.18em] text-white uppercase shadow-sm;
+}
+
+@utility btn-free {
+  @apply btn bg-success text-white tracking-wide shadow-sm hover:bg-[#17603c] hover:shadow-md;
+}
+
+@utility card {
+  @apply rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(15,27,45,0.04)];
+}
+
+@utility input {
+  @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-base text-ink placeholder:text-muted/70 transition focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none sm:text-sm;
+}
+
+@utility label {
+  @apply mb-1.5 block text-sm font-medium text-ink;
+}
+
+@layer components {
+  .prose-legal h2 {
+    @apply mt-10 mb-3 text-2xl text-ink;
+  }
+  .prose-legal h3 {
+    @apply mt-6 mb-2 text-lg font-semibold text-ink;
+  }
+  .prose-legal p,
+  .prose-legal li {
+    @apply leading-relaxed text-ink/80;
+  }
+  .prose-legal p {
+    @apply mb-4;
+  }
+  .prose-legal ul {
+    @apply mb-4 list-disc space-y-1.5 pl-6;
+  }
+  .prose-legal a {
+    @apply text-gold-dark underline underline-offset-2;
+  }
+}
+
+.lift {
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 40px -18px rgba(15, 27, 45, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

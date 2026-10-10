@@ -1,0 +1,32 @@
+import { isAdmin } from "@/lib/server/auth";
+import { listOrders, orderAuthor } from "@/lib/server/orders";
+import { STATUS_LABELS } from "@/lib/order-status";
+
+export const runtime = "nodejs";
+
+function csvCell(value: unknown): string {
+  let s = value == null ? "" : String(value);
+  // Prevent spreadsheet formula injection.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+export async function GET() {
+  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+
+  const header = ["Order Ref", "Date (UTC)", "Customer", "Email", "WhatsApp", "Book", "Author", "Price (INR)", "Amount Paid (INR)", "UTR", "Status", "Note", "Source"];
+  const rows = listOrders().map((o) => {
+    const utm = o.utm_json ? (JSON.parse(o.utm_json) as Record<string, string>) : {};
+    const source = [utm.utm_source, utm.utm_medium, utm.utm_campaign].filter(Boolean).join(" / ");
+    return [o.ref, o.created_at, o.buyer_name, o.email, o.whatsapp, o.product_title, orderAuthor(o), o.amount, o.amount_paid, o.utr, STATUS_LABELS[o.status], o.admin_note, source];
+  });
+  const csv = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
+
+  return new Response("﻿" + csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+}
