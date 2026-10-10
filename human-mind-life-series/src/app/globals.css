@@ -102,6 +102,11 @@
   @apply inline-flex items-center gap-1.5 rounded-full bg-success px-3 py-1 text-[0.7rem] font-bold tracking-[0.18em] text-white uppercase shadow-sm;
 }
 
+/* "50% OFF" next to a discounted price. */
+@utility discount-badge {
+  @apply inline-flex items-center rounded-full bg-danger px-2 py-0.5 font-sans text-[0.65rem] leading-none font-bold tracking-[0.12em] whitespace-nowrap text-white uppercase;
+}
+
 @utility btn-free {
   @apply btn bg-success text-white tracking-wide shadow-sm hover:bg-[#17603c] hover:shadow-md;
 }

@@ -76,7 +76,7 @@ export default function TermsPage() {
       <p>
         The books are written for general information, education and personal development. They are not a substitute for professional medical,
         psychological, psychiatric, legal or financial advice. Always seek the advice of a qualified professional regarding any condition or decision.
-        Volume 5 (“A Healthy Sex Life at Any Age”) is intended only for adults aged 18 and above. You use the information in the books at your own
+        Volume 5 (“A Healthy Sex Life at Any Age”) and The Intimacy Code are intended only for adults aged 18 and above. You use the information in the books at your own
         discretion and risk.
       </p>
 

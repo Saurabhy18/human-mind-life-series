@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
-import { LanguageSelector } from "../translation/LanguageSelector";
-import { LANG_RE, useUrlParam } from "../translation/useUrlParam";
 import { IconShield } from "../icons";
 
 type Checkout = { keyId: string; providerOrderId: string; amount: number; currency: string; name: string; description: string; prefill: { name: string; email: string } };
@@ -28,15 +27,12 @@ function loadRazorpay(): Promise<void> {
 
 /**
  * Payment-gateway checkout (only when PAYMENT_PROVIDER=razorpay).
- * Order → gateway checkout → the SERVER confirms payment (webhook / API) → order page.
+ * Order (package + ebooks + languages; the server sets the price) → gateway checkout →
+ * the SERVER confirms payment (webhook / API) → order page.
  * The browser's "success" callback is never trusted: it only triggers a server-side check.
  */
-export function GatewayCheckout({ bookSlug, price }: { bookSlug: string; price: number }) {
+export function GatewayCheckout({ selection, amount, currency }: { selection: PurchaseSelection; amount: number; currency: string }) {
   const router = useRouter();
-  const urlLang = useUrlParam("lang", "query", LANG_RE);
-  const [chosen, setChosen] = useState<string | null>(null);
-  const lang = chosen ?? urlLang ?? "en";
-  const onLang = useCallback((code: string) => setChosen(code), []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,8 +47,8 @@ export function GatewayCheckout({ bookSlug, price }: { bookSlug: string; price: 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bookId: bookSlug,
-          targetLanguage: String(f.get("targetLanguage") || lang),
+          packageId: selection.packageId,
+          items: selection.items,
           customerName: String(f.get("customerName") || ""),
           customerEmail: String(f.get("customerEmail") || ""),
           consent: f.get("consent") === "on",
@@ -107,7 +103,6 @@ export function GatewayCheckout({ bookSlug, price }: { bookSlug: string; price: 
           Website <input type="text" name="website" tabIndex={-1} autoComplete="off" />
         </label>
       </div>
-      <LanguageSelector bookSlug={bookSlug} value={lang} onChange={onLang} error={errors.targetLanguage} />
       <div>
         <label htmlFor="gw-name" className="label">Name *</label>
         <input id="gw-name" name="customerName" className="input" autoComplete="name" required maxLength={80} />
@@ -128,11 +123,11 @@ export function GatewayCheckout({ bookSlug, price }: { bookSlug: string; price: 
       {errors.consent && <p className="text-sm text-danger">{errors.consent}</p>}
       {message && <div role="alert" className="rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">{message}</div>}
       <button type="submit" disabled={busy} className="btn-primary w-full py-4 text-base">
-        {busy ? "Please wait…" : `BUY NOW — ₹${price.toLocaleString("en-IN")}`}
+        {busy ? "Please wait…" : `BUY NOW — ${formatMoney(amount, currency)}`}
       </button>
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
         <IconShield width={16} className="mt-px shrink-0 text-gold-dark" />
-        Your book is unlocked only after the payment is confirmed by the payment gateway. We never see or store your card, UPI PIN or bank details.
+        Your ebooks are unlocked only after the payment is confirmed by the payment gateway. We never see or store your card, UPI PIN or bank details.
       </p>
     </form>
   );

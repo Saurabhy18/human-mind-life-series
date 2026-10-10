@@ -1,25 +1,127 @@
 import "server-only";
-import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync, backup, type SQLInputValue, type StatementSync } from "node:sqlite";
+
+/**
+ * Default private storage folder for an app running in `cwd`: ./storage, except
+ * on Hostinger Node.js hosting, which replaces …/domains/<domain>/hbuilds/ on
+ * every deployment — there the data is kept beside it in …/domains/<domain>/storage.
+ * A standalone build (node .next/standalone/server.js) uses the project's ./storage,
+ * never a folder inside .next that the next build would wipe.
+ */
+export function defaultStorageDir(cwd: string): string {
+  const hostinger = cwd.replace(/\\/g, "/").match(/^(.*\/domains\/[^/]+)\/hbuilds(\/|$)/);
+  // turbopackIgnore: a runtime data folder — never trace (copy) its contents into the build output.
+  if (hostinger) return path.join(/*turbopackIgnore: true*/ hostinger[1], "storage");
+  return path.join(/*turbopackIgnore: true*/ cwd.replace(/[\\/]\.next[^\\/]*[\\/]standalone$/, ""), "storage");
+}
+
+/** True if `dir` is inside a folder that a deployment or build replaces (data there would be lost). */
+export function isEphemeralDir(dir: string): boolean {
+  return /\/(hbuilds|\.next[^/]*|public_html|public)(\/|$)/.test(dir.replace(/\\/g, "/"));
+}
+
+/** Where private data lives and whether it is usable — for the admin setup page and startup log. */
+export function storageStatus(): { dir: string; writable: boolean; ephemeral: boolean; fromEnv: boolean } {
+  let writable = true;
+  try {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    fs.accessSync(STORAGE_DIR, fs.constants.W_OK);
+  } catch {
+    writable = false;
+  }
+  return { dir: STORAGE_DIR, writable, ephemeral: isEphemeralDir(STORAGE_DIR), fromEnv: !!process.env.STORAGE_DIR };
+}
 
 /**
  * Private storage lives OUTSIDE the /public folder, so nothing in it can be
  * downloaded directly. Override the location with STORAGE_DIR in .env.local.
  */
-export const STORAGE_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_DIR || path.join(process.cwd(), "storage"));
-export const SCREENSHOT_DIR = path.join(STORAGE_DIR, "payment-screenshots");
-export const PRIVATE_BOOKS_DIR = path.join(STORAGE_DIR, "books");
+export const STORAGE_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_DIR || defaultStorageDir(process.cwd()));
+export const SCREENSHOT_DIR = path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "payment-screenshots");
+export const PRIVATE_BOOKS_DIR = path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "books");
 
-const globalForDb = globalThis as unknown as { __hmDb?: Database.Database };
+/**
+ * Node's built-in SQLite (node:sqlite) behind the small better-sqlite3-style API the app uses.
+ * Built in, so deploying needs no native module compiled with Python / node-gyp.
+ */
+class Statement {
+  constructor(private readonly stmt: StatementSync) {
+    // Callers pass whole records (e.g. { ...order, ref }); fields the SQL doesn't use are ignored.
+    stmt.setAllowUnknownNamedParameters(true);
+  }
 
-function open(): Database.Database {
+  run(...params: unknown[]) {
+    return this.stmt.run(...(params as SQLInputValue[]));
+  }
+
+  // Rows are copied to plain objects: node:sqlite's null-prototype rows can't be passed to Client Components.
+  get(...params: unknown[]): unknown {
+    const row = this.stmt.get(...(params as SQLInputValue[]));
+    return row && { ...row };
+  }
+
+  all(...params: unknown[]): unknown[] {
+    return this.stmt.all(...(params as SQLInputValue[])).map((row) => ({ ...row }));
+  }
+}
+
+export class Database {
+  private readonly db: DatabaseSync;
+  private depth = 0;
+
+  constructor(file: string) {
+    this.db = new DatabaseSync(file);
+  }
+
+  prepare(sql: string): Statement {
+    return new Statement(this.db.prepare(sql));
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  /** Wraps `fn` in BEGIN … COMMIT (a savepoint when nested); rolls back and rethrows if it throws. */
+  transaction<T>(fn: () => T): () => T {
+    return () => {
+      const savepoint = this.depth > 0 ? `sp${this.depth}` : null;
+      this.db.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN");
+      this.depth++;
+      try {
+        const result = fn();
+        this.db.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
+        return result;
+      } catch (err) {
+        // SQLite may already have rolled back on its own (e.g. disk full).
+        if (this.db.isTransaction) this.db.exec(savepoint ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+        throw err;
+      } finally {
+        this.depth--;
+      }
+    };
+  }
+
+  /** Online backup to `file`: a consistent snapshot that includes changes still in the -wal file. */
+  async backup(file: string): Promise<void> {
+    await backup(this.db, file);
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
+const globalForDb = globalThis as unknown as { __hmDb?: Database };
+
+function open(): Database {
   for (const dir of [STORAGE_DIR, SCREENSHOT_DIR, PRIVATE_BOOKS_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  const db = new Database(path.join(STORAGE_DIR, "orders.db"));
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const db = new Database(path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "orders.db"));
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS orders (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,7 +202,7 @@ function open(): Database.Database {
 }
 
 /** Adds columns introduced after the first release to existing databases. */
-function migrate(db: Database.Database) {
+function migrate(db: Database) {
   const cols = new Set((db.prepare("PRAGMA table_info(orders)").all() as { name: string }[]).map((c) => c.name));
   if (!cols.has("amount_paid")) db.exec("ALTER TABLE orders ADD COLUMN amount_paid REAL");
   if (!cols.has("author")) db.exec("ALTER TABLE orders ADD COLUMN author TEXT");
@@ -125,6 +227,8 @@ function migrate(db: Database.Database) {
   add("download_count", "download_count INTEGER NOT NULL DEFAULT 0");
   add("ready_email_sent_at", "ready_email_sent_at TEXT");
   add("processing_email_sent_at", "processing_email_sent_at TEXT");
+  // ---- Packages (v4): individual / 3-book / 5-book bundle (src/config/packages.ts) ----
+  add("package_type", "package_type TEXT NOT NULL DEFAULT 'individual'");
 
   // Orders created before this release used the manual UPI flow; keep their payment status in step with the admin status.
   db.exec(`UPDATE orders SET payment_status = 'PAID' WHERE payment_status = 'PENDING' AND status IN ('verified','delivered')`);
@@ -221,10 +325,44 @@ function migrate(db: Database.Database) {
       created_at TEXT    NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_downloads_order ON download_logs(order_id);
+
+    -- One row per ebook in an order (1, 3 or 5), each with its OWN language, delivery state, file and downloads.
+    CREATE TABLE IF NOT EXISTS order_items (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id           INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      position           INTEGER NOT NULL DEFAULT 0,
+      book_slug          TEXT    NOT NULL,
+      book_title         TEXT    NOT NULL,
+      author             TEXT,
+      source_language    TEXT    NOT NULL DEFAULT 'en',
+      target_language    TEXT    NOT NULL,
+      fulfillment_status TEXT    NOT NULL DEFAULT 'NOT_STARTED'
+                         CHECK (fulfillment_status IN ('NOT_STARTED','PROCESSING','COMPLETED','FAILED')),
+      cache_key          TEXT,
+      translated_book_id INTEGER,
+      download_count     INTEGER NOT NULL DEFAULT 0,
+      access_expires_at  TEXT,
+      created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (order_id, book_slug)
+    );
+    CREATE INDEX IF NOT EXISTS idx_items_order ON order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_items_cache_key ON order_items(cache_key);
+
+    -- Orders placed before packages had exactly one book: copy it into order_items (once).
+    INSERT INTO order_items (order_id, position, book_slug, book_title, author, source_language, target_language,
+                             fulfillment_status, cache_key, translated_book_id, download_count, access_expires_at, created_at, updated_at)
+    SELECT o.id, 0, o.product_slug, o.product_title, o.author, o.source_language, o.target_language,
+           o.fulfillment_status, o.cache_key, o.translated_book_id, o.download_count, o.access_expires_at, o.created_at, o.updated_at
+    FROM orders o WHERE NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id);
+    UPDATE orders SET package_type = 'five_book_bundle' WHERE product_slug = 'complete-series' AND package_type = 'individual';
   `);
+
+  const logCols = new Set((db.prepare("PRAGMA table_info(download_logs)").all() as { name: string }[]).map((c) => c.name));
+  if (!logCols.has("item_id")) db.exec("ALTER TABLE download_logs ADD COLUMN item_id INTEGER");
 }
 
-export function getDb(): Database.Database {
+export function getDb(): Database {
   if (!globalForDb.__hmDb) globalForDb.__hmDb = open();
   return globalForDb.__hmDb;
 }

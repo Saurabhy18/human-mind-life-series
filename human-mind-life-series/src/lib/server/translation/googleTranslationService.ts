@@ -73,7 +73,8 @@ class GoogleTranslationService implements TranslationService {
     if (!this.client) {
       // Loaded at runtime only; credentials come from Application Default Credentials
       // (gcloud auth / service account / workload identity) — never from source code.
-      const mod = (await import(/* webpackIgnore: true */ "@google-cloud/translate" as string)) as { v3: { TranslationServiceClient: new () => V3Client } };
+      // A plain import (no webpackIgnore) so the build includes the SDK in standalone output (Hostinger builds standalone).
+      const mod = (await import("@google-cloud/translate")) as unknown as { v3: { TranslationServiceClient: new () => V3Client } };
       this.client = new mod.v3.TranslationServiceClient();
     }
     return this.client;

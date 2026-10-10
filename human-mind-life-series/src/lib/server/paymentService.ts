@@ -4,7 +4,7 @@ import { ENV } from "@/config/env.server";
 import { CONFIG } from "@/config/site.config";
 import { getDb } from "./db";
 import { logger, errorMessage } from "./logger";
-import { getOrder, type Order } from "./orders";
+import { getOrder, getOrderItems, type Order } from "./orders";
 import { markOrderPaid, markOrderPaymentFailed } from "./fulfillment";
 
 /**
@@ -34,6 +34,19 @@ function razorpayConfigured() {
 
 export function gatewayEnabled(): boolean {
   return razorpayConfigured();
+}
+
+export type CheckoutMode = "gateway" | "upi" | "closed";
+
+/**
+ * What customers can do at checkout:
+ *  - gateway: Razorpay is fully configured (PAYMENT_PROVIDER=razorpay + keys + webhook secret)
+ *  - upi:     the older manual UPI QR flow, only when PAYMENT_PROVIDER=manual_upi is set on purpose
+ *  - closed:  anything else (the default) — no orders or payments are accepted
+ */
+export function checkoutMode(): CheckoutMode {
+  if (gatewayEnabled()) return "gateway";
+  return ENV.payment.provider === "manual_upi" ? "upi" : "closed";
 }
 
 async function razorpay<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
@@ -71,7 +84,14 @@ export async function createGatewayPayment(order: Order): Promise<CheckoutData> 
       amount: toPaise(order.amount),
       currency: order.currency,
       receipt: order.ref,
-      notes: { ref: order.ref, book: order.product_slug, language: order.target_language },
+      notes: {
+        ref: order.ref,
+        package: order.package_type,
+        books: getOrderItems(order.id)
+          .map((i) => `${i.book_slug}:${i.target_language}`)
+          .join(", ")
+          .slice(0, 250),
+      },
     });
     if (created.amount !== toPaise(order.amount) || created.currency !== order.currency || created.receipt !== order.ref) {
       throw new Error("Gateway order does not match our order");

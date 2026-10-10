@@ -3,6 +3,7 @@ import { BUSINESS_EMAIL, CONFIG } from "@/config/site.config";
 import { mailtoLink, whatsappLink } from "@/lib/contact";
 import { formatINR, type Book } from "@/lib/products";
 import type { FaqItem } from "@/content/books";
+import type { CheckoutMode } from "@/lib/server/paymentService";
 import { IconCheck, IconMail, IconWhatsApp } from "../icons";
 
 export function LearnList({ book }: { book: Book }) {
@@ -113,7 +114,7 @@ export function Disclaimer({ book }: { book: Book }) {
   );
 }
 
-export function bookFaqs(book: Book): FaqItem[] {
+export function bookFaqs(book: Book, mode: CheckoutMode): FaqItem[] {
   if (book.free) {
     return [
       ...book.faqs,
@@ -139,13 +140,28 @@ export function bookFaqs(book: Book): FaqItem[] {
       q: "What format is the book in?",
       a: `It is a ${CONFIG.BOOK_FORMAT} that you can read on your phone, tablet or computer.`,
     },
-    {
-      q: "How do I buy this book?",
-      a: `Click “Buy Now”, pay ${formatINR(book.price)} by scanning our UPI QR code, then submit your name, email, WhatsApp number, UTR / Transaction ID and payment screenshot on the same page.`,
-    },
-    {
-      q: "When will I receive it?",
-      a: `Every payment is verified manually. Your book will be sent to your email and/or WhatsApp ${CONFIG.DELIVERY_TIMEFRAME}.`,
-    },
+    ...(mode === "upi"
+      ? [
+          {
+            q: "How do I buy this book?",
+            a: `Click “Buy Now”, pay ${formatINR(book.price)} by scanning our UPI QR code, then submit your name, email, WhatsApp number, UTR / Transaction ID and payment screenshot on the same page.`,
+          },
+          {
+            q: "When will I receive it?",
+            a: `Every payment is verified manually. Your book will be sent to your email and/or WhatsApp ${CONFIG.DELIVERY_TIMEFRAME}.`,
+          },
+        ]
+      : mode === "gateway"
+        ? [
+            {
+              q: "How do I buy this book?",
+              a: `Click “Buy Now”, review your order (${formatINR(book.price)}) and pay on the secure checkout page.`,
+            },
+            {
+              q: "When will I receive it?",
+              a: `Once your payment is confirmed, you can download it from your private order page ${CONFIG.DELIVERY_TIMEFRAME}.`,
+            },
+          ]
+        : [{ q: "How do I buy this book?", a: "Online checkout is not open yet, so this book can’t be bought on this website at the moment. If you have a question, please contact us." }]),
   ];
 }

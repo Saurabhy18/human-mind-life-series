@@ -67,7 +67,7 @@ export async function restartFulfillmentAction(formData: FormData): Promise<void
   await requireAdmin();
   const id = Number(formData.get("id"));
   if (!Number.isInteger(id) || !getOrder(id)) throw new Error("Invalid request");
-  await startFulfillment(id);
+  await startFulfillment(id, { retryFailed: true });
   revalidatePath(`/admin/orders/${id}`);
 }
 

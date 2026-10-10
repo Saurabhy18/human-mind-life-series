@@ -1,18 +1,24 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
+import { DEFAULT_LANGUAGE, featuredLanguageName, type EbookLanguage } from "@/config/languages";
 
-export type Language = { code: string; name: string };
+export type Language = EbookLanguage;
 
-let languagesPromise: Promise<Language[]> | null = null;
-function loadLanguages(): Promise<Language[]> {
+type LanguageList = { languages: Language[]; featured: string[] };
+const ENGLISH_ONLY: LanguageList = { languages: [DEFAULT_LANGUAGE], featured: [] };
+
+let languagesPromise: Promise<LanguageList> | null = null;
+function loadLanguages(): Promise<LanguageList> {
   if (!languagesPromise) {
     languagesPromise = fetch("/api/languages")
       .then((r) => r.json())
-      .then((d: { success?: boolean; languages?: Language[] }) => (d.success && d.languages?.length ? d.languages : [{ code: "en", name: "English" }]))
+      .then((d: { success?: boolean; languages?: Language[]; featured?: string[] }) =>
+        d.success && d.languages?.length ? { languages: d.languages, featured: d.featured ?? [] } : ENGLISH_ONLY,
+      )
       .catch(() => {
         languagesPromise = null;
-        return [{ code: "en", name: "English" }];
+        return ENGLISH_ONLY;
       });
   }
   return languagesPromise;
@@ -32,9 +38,24 @@ function isMultilingual(slug: string): Promise<boolean> {
   return multilingualCache.get(slug)!;
 }
 
+/** Code → language name from the same list (the featured names from config/languages.ts until it has loaded). */
+export function useLanguageNames(): (code: string) => string {
+  const [list, setList] = useState<LanguageList | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadLanguages().then((l) => alive && setList(l));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return useCallback((code: string) => list?.languages.find((l) => l.code === code)?.name ?? featuredLanguageName(code), [list]);
+}
+
 /**
- * "Choose your language" dropdown, populated from GET /api/languages (Google
- * Cloud Translation's live list). For books that can't be translated it shows
+ * "Choose your ebook language" dropdown, populated from GET /api/languages
+ * (Google Cloud Translation's live list; popular languages from
+ * src/config/languages.ts first). Shows names, submits the language code.
+ * English is the default. For books that can't be translated it shows
  * "English edition" and submits "en".
  */
 export function LanguageSelector({
@@ -44,6 +65,8 @@ export function LanguageSelector({
   name = "targetLanguage",
   tone = "light",
   error,
+  label,
+  hint = true,
 }: {
   bookSlug: string;
   value: string;
@@ -51,9 +74,14 @@ export function LanguageSelector({
   name?: string;
   tone?: "light" | "dark";
   error?: string;
+  /** Visible label (e.g. "Language for Volume 3" when several books are chosen). */
+  label?: string;
+  /** Show the "machine-translated" note under the dropdown. */
+  hint?: boolean;
 }) {
   const id = useId();
-  const [languages, setLanguages] = useState<Language[] | null>(null);
+  const [list, setList] = useState<LanguageList | null>(null);
+  const languages = list?.languages ?? null;
   // Remembered per book, so switching book shows "loading" again without resetting state inside an effect.
   const [info, setInfo] = useState<{ slug: string; multilingual: boolean } | null>(null);
   const multilingual = info?.slug === bookSlug ? info.multilingual : null;
@@ -64,14 +92,14 @@ export function LanguageSelector({
       if (!alive) return;
       setInfo({ slug: bookSlug, multilingual: m });
       if (!m) {
-        if (value !== "en") onChange("en", { code: "en", name: "English" });
+        if (value !== DEFAULT_LANGUAGE.code) onChange(DEFAULT_LANGUAGE.code, DEFAULT_LANGUAGE);
         return;
       }
-      const list = await loadLanguages();
+      const loaded = await loadLanguages();
       if (!alive) return;
-      setLanguages(list);
+      setList(loaded);
       // A language that isn't offered falls back to English.
-      if (!list.some((l) => l.code === value)) onChange("en", list[0]);
+      if (!loaded.languages.some((l) => l.code === value)) onChange(DEFAULT_LANGUAGE.code, loaded.languages[0]);
     });
     return () => {
       alive = false;
@@ -83,7 +111,8 @@ export function LanguageSelector({
     return (
       <div>
         <input type="hidden" name={name} value="en" />
-        <p className={`text-sm ${dark ? "text-white/70" : "text-muted"}`}>Language: English edition</p>
+        {label && <p className={`label ${dark ? "text-white" : ""}`}>{label}</p>}
+        <p className={`text-sm ${dark ? "text-white/70" : "text-muted"}`}>{label ? "English edition (available in English only for now)" : "Language: English edition"}</p>
       </div>
     );
   }
@@ -91,7 +120,7 @@ export function LanguageSelector({
   return (
     <div>
       <label htmlFor={id} className={`label ${dark ? "text-white" : ""}`}>
-        Choose your language
+        {label ?? "Choose your ebook language"}
       </label>
       <select
         id={id}
@@ -103,14 +132,30 @@ export function LanguageSelector({
         aria-invalid={!!error || undefined}
       >
         {!languages && <option value={value}>Loading languages…</option>}
-        {languages?.map((l) => (
-          <option key={l.code} value={l.code}>
-            {l.code === "en" ? `${l.name} (original)` : l.name}
-          </option>
-        ))}
+        {list && <LanguageOptions {...list} />}
       </select>
-      <p className={`mt-1.5 text-xs ${dark ? "text-white/60" : "text-muted"}`}>Available in multiple languages. Translated editions are machine-translated with Google Cloud Translation.</p>
+      {hint && <p className={`mt-1.5 text-xs ${dark ? "text-white/60" : "text-muted"}`}>Your ebook will be provided in the selected language. Translated editions are machine-translated with Google Cloud Translation.</p>}
       {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
     </div>
+  );
+}
+
+/** English (original) first, then "Popular languages", then every other supported language. */
+function LanguageOptions({ languages, featured }: LanguageList) {
+  const option = (l: Language) => (
+    <option key={l.code} value={l.code}>
+      {l.code === DEFAULT_LANGUAGE.code ? `${l.name} (original)` : l.name}
+    </option>
+  );
+  const [original, ...others] = languages;
+  const popularCodes = new Set(featured.filter((c) => c !== DEFAULT_LANGUAGE.code));
+  const popular = featured.map((c) => others.find((l) => l.code === c && popularCodes.has(c))).filter((l): l is Language => !!l);
+  if (popular.length === 0) return <>{languages.map(option)}</>;
+  return (
+    <>
+      {option(original)}
+      <optgroup label="Popular languages">{popular.map(option)}</optgroup>
+      <optgroup label="All languages">{others.filter((l) => !popularCodes.has(l.code)).map(option)}</optgroup>
+    </>
   );
 }

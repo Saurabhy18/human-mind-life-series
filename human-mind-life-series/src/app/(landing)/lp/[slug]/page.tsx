@@ -7,12 +7,17 @@ import { FreeBadge, FreeBookSection } from "@/components/free/FreeBookSection";
 import { BookPurchase } from "@/components/translation/BookPurchase";
 import { bookOgImage, pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";
+import { BookPrice } from "@/components/BookPrice";
+import { OfferCountdown } from "@/components/OfferCountdown";
 import { FaqList } from "@/components/FaqList";
 import { HowToBuy } from "@/components/HowToBuy";
 import { TrackView } from "@/components/tracking/TrackView";
 import { StickyBuyBar } from "@/components/book/StickyBuyBar";
 import { bookFaqs, Disclaimer, LearnList, SamplePreview, TopicList } from "@/components/book/BookSections";
 import { IconArrowRight, IconCheck, IconShield } from "@/components/icons";
+import { paymentCopy } from "@/content/paymentCopy";
+import { checkoutMode } from "@/lib/server/paymentService";
+import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 
 /**
  * AD LANDING PAGE — one per book, e.g. /lp/the-psychology-of-human-behavior
@@ -36,6 +41,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function LandingPage({ params }: Props) {
   const book = getBook((await params).slug);
   if (!book) notFound();
+  const mode = checkoutMode();
+  const pay = paymentCopy(mode);
   const tracked = { slug: book.slug, label: book.label, price: book.price };
 
   return (
@@ -62,8 +69,12 @@ export default async function LandingPage({ params }: Props) {
               </div>
             ) : (
               <div className="mt-8 max-w-md">
-                <BookPurchase slug={book.slug} tone="dark" buttonClass="btn-gold px-10 py-4 text-base" label={`Buy Now — ${formatINR(book.price)}`} />
-                <p className="mt-3 text-sm text-white/60">{CONFIG.BOOK_FORMAT} · Pay by UPI</p>
+                <p className="mb-4 font-serif text-4xl text-white">
+                  <BookPrice book={book} tone="dark" size="lg" />
+                </p>
+                <OfferCountdown tone="dark" className="mb-5" />
+                <BookPurchase slug={book.slug} translations={bookIsTranslatable(book.slug)} tone="dark" buttonClass="btn-gold px-10 py-4 text-base" label={`Buy Now — ${formatINR(book.price)}`} />
+                <p className="mt-3 text-sm text-white/60">{CONFIG.BOOK_FORMAT} · {pay.payShort}</p>
               </div>
             )}
             <p className="mt-6 text-sm text-white/60">by <span className="font-medium text-white/90">{book.author}</span></p>
@@ -115,7 +126,7 @@ export default async function LandingPage({ params }: Props) {
         <section className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-3">
           {(book.free
             ? ["Completely free, no payment", "Your details are kept private", "Support on email & WhatsApp"]
-            : ["Every payment personally verified", "We never ask for your UPI PIN or OTP", "Support on email & WhatsApp"]
+            : [pay.landingConfirmed, "We never ask for your UPI PIN or OTP", "Support on email & WhatsApp"]
           ).map((t) => (
             <div key={t} className="flex items-start gap-3 rounded-xl border border-line bg-white p-5 text-sm">
               {t.startsWith("We never") ? <IconShield className="shrink-0 text-gold-dark" /> : <IconCheck className="shrink-0 text-gold-dark" />}
@@ -126,7 +137,7 @@ export default async function LandingPage({ params }: Props) {
 
         <section aria-labelledby="faq" className="mx-auto max-w-3xl">
           <h2 id="faq" className="mb-6 text-2xl sm:text-3xl">Questions</h2>
-          <FaqList items={bookFaqs(book)} />
+          <FaqList items={bookFaqs(book, mode)} />
         </section>
 
         <div className="mx-auto max-w-3xl">

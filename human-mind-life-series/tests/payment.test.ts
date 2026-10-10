@@ -24,6 +24,11 @@ async function order(ref: string) {
   return getOrderByRef(ref)!;
 }
 
+async function itemKey(orderId: number) {
+  const { getOrderItems } = await import("@/lib/server/orders");
+  return getOrderItems(orderId)[0].cache_key;
+}
+
 async function count(sql: string, ...args: unknown[]) {
   const { getDb } = await import("@/lib/server/db");
   return (getDb().prepare(sql).get(...args) as { n: number }).n;
@@ -63,7 +68,7 @@ describe("POST /api/payment/webhook", () => {
     expect(row.payment_status).toBe("PAID");
     expect(row.fulfillment_status).toBe("PROCESSING");
     expect(await count("SELECT COUNT(*) n FROM payments WHERE order_id = ?", row.id)).toBe(1);
-    expect(await count("SELECT COUNT(*) n FROM translation_jobs WHERE cache_key = ?", row.cache_key)).toBe(1);
+    expect(await count("SELECT COUNT(*) n FROM translation_jobs WHERE cache_key = ?", await itemKey(row.id))).toBe(1);
     const { sentEmailsForTests } = await import("@/lib/server/emailService");
     expect(sentEmailsForTests.some((e) => e.subject.includes("being prepared") && e.text.includes(o.ref))).toBe(true);
   });
@@ -79,7 +84,7 @@ describe("POST /api/payment/webhook", () => {
     expect((await sendWebhook(webhookBody("order.paid", payment, rzpOrder))).body.message).toBe("Duplicate ignored");
     const row = await order(o.ref);
     expect(await count("SELECT COUNT(*) n FROM payments WHERE order_id = ?", row.id)).toBe(1);
-    expect(await count("SELECT COUNT(*) n FROM translation_jobs WHERE cache_key = ?", row.cache_key)).toBe(1);
+    expect(await count("SELECT COUNT(*) n FROM translation_jobs WHERE cache_key = ?", await itemKey(row.id))).toBe(1);
   });
 
   it("rejects an invalid signature and leaves the order unpaid", async () => {

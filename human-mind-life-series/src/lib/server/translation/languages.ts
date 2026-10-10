@@ -2,14 +2,15 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { ENV } from "@/config/env.server";
+import { DEFAULT_LANGUAGE, FEATURED_LANGUAGES } from "@/config/languages";
 import { STORAGE_DIR } from "../db";
 import { logger, errorMessage } from "../logger";
 import { getTranslationService, type Language } from "./googleTranslationService";
 
 /** The language every book is written in. */
-export const SOURCE_LANGUAGE: Language = { code: "en", name: "English" };
+export const SOURCE_LANGUAGE: Language = { ...DEFAULT_LANGUAGE };
 
-const CACHE_FILE = path.join(STORAGE_DIR, "cache", "supported-languages.json");
+const CACHE_FILE = path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "cache", "supported-languages.json");
 let memory: { at: number; languages: Language[] } | null = null;
 
 function readDiskCache(): Language[] | null {
@@ -33,13 +34,15 @@ function writeDiskCache(languages: Language[]) {
 /**
  * Languages a customer can choose. Fetched from Google Cloud Translation
  * (not a hard-coded list), cached for LANGUAGES_CACHE_HOURS, with the last
- * good list kept on disk in case Google is briefly unreachable.
- * English (the original) is always first. Without translation configured,
- * only English is offered.
+ * good list kept on disk in case Google is briefly unreachable (and the
+ * featured list from config/languages.ts if there is no saved list yet).
+ * English (the original) is always first. Without translation configured and
+ * switched on for sale, only English is offered.
  */
 export async function getAvailableLanguages(): Promise<Language[]> {
   const svc = getTranslationService();
-  if (!svc) return [SOURCE_LANGUAGE];
+  // English only until translated editions are deliberately switched on (TRANSLATION_SALES_ENABLED).
+  if (!svc || !ENV.translation.salesEnabled) return [SOURCE_LANGUAGE];
 
   const ttl = ENV.translation.languagesCacheHours * 3600_000;
   if (memory && Date.now() - memory.at < ttl) return memory.languages;
@@ -50,15 +53,15 @@ export async function getAvailableLanguages(): Promise<Language[]> {
   } catch (err) {
     logger.error("getSupportedLanguages failed", { error: errorMessage(err) });
   }
-  const list = fetched?.length ? fetched : readDiskCache();
-  if (!list) return [SOURCE_LANGUAGE];
+  const list = fetched?.length ? fetched : (readDiskCache() ?? FEATURED_LANGUAGES.map((l) => ({ ...l })));
 
   const others = list
     .filter((l) => normalizeCode(l.code) !== SOURCE_LANGUAGE.code)
     .sort((a, b) => a.name.localeCompare(b.name, "en"));
   const languages = [SOURCE_LANGUAGE, ...others];
   if (fetched?.length) writeDiskCache(fetched);
-  memory = { at: Date.now(), languages };
+  // A fallback list is only kept briefly, so the live list is retried soon.
+  memory = { at: fetched?.length ? Date.now() : Date.now() - ttl + 60_000, languages };
   return languages;
 }
 
@@ -72,6 +75,12 @@ export async function resolveTargetLanguage(code: unknown): Promise<Language | n
   const wanted = code.trim().toLowerCase();
   const languages = await getAvailableLanguages();
   return languages.find((l) => l.code.toLowerCase() === wanted) ?? null;
+}
+
+/** Codes of the featured languages that the provider actually supports (English first), for the "Popular languages" group. */
+export function featuredCodes(languages: Language[]): string[] {
+  const offered = new Map(languages.map((l) => [l.code.toLowerCase(), l.code]));
+  return FEATURED_LANGUAGES.map((l) => offered.get(l.code.toLowerCase())).filter((c): c is string => !!c);
 }
 
 /** Right-to-left scripts (used when generating translated books). */

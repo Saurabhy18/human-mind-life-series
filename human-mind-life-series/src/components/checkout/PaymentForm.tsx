@@ -1,34 +1,29 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Product } from "@/lib/products";
+import { useEffect, useRef, useState } from "react";
+import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
 import { IconShield, IconUpload } from "../icons";
-import { LanguageSelector } from "../translation/LanguageSelector";
-import { LANG_RE, useUrlParam } from "../translation/useUrlParam";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 
 type Errors = Record<string, string>;
 
-export function PaymentForm({ products, initialSlug, upiId }: { products: Product[]; initialSlug: string; upiId: string }) {
+/**
+ * "Payment completed?" form for the UPI QR flow. The package, ebooks and languages come from the checkout
+ * selection; the server re-checks them and sets the price itself.
+ */
+export function PaymentForm({ selection, amount, summary, upiId }: { selection: PurchaseSelection; amount: number; summary: string; upiId: string }) {
   const router = useRouter();
-  const [slug, setSlug] = useState(initialSlug);
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
-  // Language chosen on the book page arrives as ?lang=xx; the customer can still change it here.
-  const urlLang = useUrlParam("lang", "query", LANG_RE);
-  const [chosenLang, setChosenLang] = useState<string | null>(null);
-  const lang = chosenLang ?? urlLang ?? "en";
-  const onLang = useCallback((code: string) => setChosenLang(code), []);
-
-  const product = useMemo(() => products.find((p) => p.slug === slug) ?? products[0], [products, slug]);
+  const price = formatMoney(amount, "INR");
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -71,6 +66,8 @@ export function PaymentForm({ products, initialSlug, upiId }: { products: Produc
       fileRef.current?.focus();
       return;
     }
+    data.set("packageId", selection.packageId);
+    data.set("items", JSON.stringify(selection.items));
     data.set("tracking", JSON.stringify(getAttribution() ?? {}));
 
     setSubmitting(true);
@@ -79,7 +76,8 @@ export function PaymentForm({ products, initialSlug, upiId }: { products: Produc
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; ref?: string; accessToken?: string; message?: string; errors?: Errors };
       if (res.ok && json.ok && json.ref) {
         // The private order token travels in the URL fragment, which is never sent to the server or logged.
-        router.push(`/order/thank-you?ref=${encodeURIComponent(json.ref)}&book=${encodeURIComponent(product.slug)}${json.accessToken ? `#t=${json.accessToken}` : ""}`);
+        const book = selection.items.length === 1 ? `&book=${encodeURIComponent(selection.items[0].bookId)}` : "";
+        router.push(`/order/thank-you?ref=${encodeURIComponent(json.ref)}&package=${selection.packageId}${book}${json.accessToken ? `#t=${json.accessToken}` : ""}`);
         return;
       }
       setErrors(json.errors ?? {});
@@ -121,36 +119,23 @@ export function PaymentForm({ products, initialSlug, upiId }: { products: Produc
           <input id="email" name="email" type="email" className="input" autoComplete="email" inputMode="email" required maxLength={120} {...aria("email")} />
           {err("email")}
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <label htmlFor="whatsapp" className="label">WhatsApp Number *</label>
           <input id="whatsapp" name="whatsapp" type="tel" className="input" autoComplete="tel" inputMode="tel" placeholder="+91 98765 43210" required maxLength={20} {...aria("whatsapp")} />
           {err("whatsapp")}
         </div>
-        <div>
-          <label htmlFor="product" className="label">Book Purchased *</label>
-          <select id="product" name="product" className="input" value={slug} onChange={(e) => setSlug(e.target.value)} {...aria("product")}>
-            {products.map((p) => (
-              <option key={p.slug} value={p.slug}>
-                {p.label} — ₹{p.price.toLocaleString("en-IN")}
-              </option>
-            ))}
-          </select>
-          {err("product")}
-        </div>
       </div>
-
-      <LanguageSelector bookSlug={product.slug} value={lang} onChange={onLang} error={errors.targetLanguage} />
 
       <div>
         <label htmlFor="amountPaid" className="label">Amount Paid (₹) *</label>
         <input
-          key={product.slug}
+          key={amount}
           id="amountPaid"
           name="amountPaid"
           className="input"
           inputMode="decimal"
           autoComplete="off"
-          defaultValue={String(product.price)}
+          defaultValue={String(amount)}
           required
           maxLength={10}
           {...aria("amountPaid")}
@@ -212,8 +197,8 @@ export function PaymentForm({ products, initialSlug, upiId }: { products: Produc
         <label className="flex items-start gap-3 text-sm leading-relaxed text-ink/85">
           <input type="checkbox" name="consent" className="mt-1 h-4 w-4 shrink-0 accent-[var(--color-ink)]" {...aria("consent")} />
           <span>
-            I confirm that I have paid <strong>₹{product.price.toLocaleString("en-IN")}</strong> to UPI ID <strong className="break-all">{upiId}</strong> for{" "}
-            <strong>{product.label}</strong>, and that the details above are correct. I agree to the{" "}
+            I confirm that I have paid <strong>{price}</strong> to UPI ID <strong className="break-all">{upiId}</strong> for <strong>{summary}</strong>, and that the details above are
+            correct. I agree to the{" "}
             <a href="/terms-and-conditions" target="_blank" className="underline">Terms</a>,{" "}
             <a href="/privacy-policy" target="_blank" className="underline">Privacy Policy</a> and{" "}
             <a href="/refund-policy" target="_blank" className="underline">Refund Policy</a>.
@@ -234,7 +219,7 @@ export function PaymentForm({ products, initialSlug, upiId }: { products: Produc
 
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
         <IconShield width={16} className="mt-px shrink-0 text-gold-dark" />
-        Your payment will be manually verified before your book is delivered. We will never ask for your UPI PIN, OTP, bank password, card number or CVV.
+        Your payment will be manually verified before your ebooks are delivered. We will never ask for your UPI PIN, OTP, bank password, card number or CVV.
       </p>
     </form>
   );

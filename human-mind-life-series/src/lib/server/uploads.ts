@@ -48,5 +48,5 @@ export async function deleteScreenshot(fileName: string): Promise<void> {
 /** Resolves a stored file name safely (rejects anything that could escape the folder). */
 export function resolveScreenshotPath(fileName: string): string {
   if (!/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(fileName)) throw new Error("Invalid file name");
-  return path.join(SCREENSHOT_DIR, fileName);
+  return path.join(/*turbopackIgnore: true*/ SCREENSHOT_DIR, fileName);
 }

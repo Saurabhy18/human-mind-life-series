@@ -1,4 +1,5 @@
 import { CONFIG, isPlaceholder } from "@/config/site.config";
+import { PACKAGES, formatMoney, type PackageId, type PurchasePackage } from "@/config/packages";
 import { BOOKS, type BookContent } from "@/content/books";
 
 export type Book = Omit<BookContent, "sourceLanguage"> & {
@@ -7,7 +8,10 @@ export type Book = Omit<BookContent, "sourceLanguage"> & {
   currency: "INR";
   /** Pen name of this volume's author (from site.config.ts). */
   author: string;
+  /** What the customer pays (₹0 for free books). */
   price: number;
+  /** Original price shown struck through next to `price` (e.g. ₹599), or null when there is no discount. Never charged. */
+  originalPrice: number | null;
   /** "Volume 4", or null for a book shown without a volume number (The Intimacy Code). */
   volumeLabel: string | null;
   /** Display name: "Volume 4 — Intimacy After 50", or just the title when the volume label is hidden. */
@@ -28,12 +32,8 @@ export type Product = {
   price: number;
 };
 
-const PRICES: Record<number, number> = {
-  1: CONFIG.BOOK_1_PRICE,
-  2: CONFIG.BOOK_2_PRICE,
-  3: CONFIG.BOOK_3_PRICE,
-  4: CONFIG.BOOK_4_PRICE,
-  5: CONFIG.BOOK_5_PRICE,
+/** Every paid book costs the Individual Ebook price (src/config/packages.ts); only free books are listed here. */
+const PRICE_OVERRIDES: Record<number, number> = {
   6: CONFIG.BOOK_6_PRICE,
 };
 
@@ -56,15 +56,18 @@ const COVERS: Record<number, string> = {
 };
 
 export const ALL_BOOKS: Book[] = BOOKS.map((b) => {
-  const price = Math.max(0, PRICES[b.volume] ?? 0);
+  const price = Math.max(0, PRICE_OVERRIDES[b.volume] ?? PACKAGES.individual.price);
+  // Only books sold at the Individual Ebook price carry its original price; free books never do.
+  const original = PRICE_OVERRIDES[b.volume] === undefined ? PACKAGES.individual.originalPrice : undefined;
   return {
     ...b,
     sourceLanguage: b.sourceLanguage ?? "en",
-    currency: "INR" as const,
+    currency: PACKAGES.individual.currency,
     author: AUTHORS[b.volume],
     volumeLabel: b.hideVolumeLabel ? null : `Volume ${b.volume}`,
     label: b.hideVolumeLabel ? b.title : `Volume ${b.volume} — ${b.title}`,
     price,
+    originalPrice: price > 0 && original && original > price ? original : null,
     free: price === 0,
     cover: isPlaceholder(COVERS[b.volume]) ? null : COVERS[b.volume],
   };
@@ -76,6 +79,7 @@ export const FREE_BOOKS = ALL_BOOKS.filter((b) => b.free);
 /** All pen names, in volume order. */
 export const ALL_AUTHORS = ALL_BOOKS.map((b) => ({ name: b.author, volume: b.volume, title: b.title, slug: b.slug }));
 
+/** /checkout/complete-series opens checkout with the 5-book bundle selected. */
 export const BUNDLE_SLUG = "complete-series";
 
 export function getBook(slug: string): Book | undefined {
@@ -105,32 +109,51 @@ export function volumeRange(books: Book[]): string {
   return v.length === 1 ? `Volume ${v[0]}` : `Volumes ${Math.min(...v)}–${Math.max(...v)}`;
 }
 
+/** A package is offered only when there are enough paid books for it. */
+export function packageAvailable(pkg: PurchasePackage): boolean {
+  return pkg.books >= 1 && pkg.books <= PAID_BOOKS.length;
+}
+
+/** True when the package contains every paid book (nothing to choose). */
+export function packageIncludesAll(pkg: PurchasePackage): boolean {
+  return pkg.books === PAID_BOOKS.length;
+}
+
+/** The complete-series offer is the 5-book bundle. */
 export function bundleEnabled(): boolean {
-  return CONFIG.SERIES_BUNDLE.enabled && CONFIG.SERIES_BUNDLE.price > 0 && PAID_BOOKS.length > 1;
+  return PAID_BOOKS.length > 1 && packageAvailable(PACKAGES.five_book_bundle);
 }
 
-export function individualTotal(): number {
-  return PAID_BOOKS.reduce((sum, b) => sum + b.price, 0);
+export function bundlePrice(): number {
+  return PACKAGES.five_book_bundle.price;
 }
 
+/** What `count` books would cost bought one at a time (all paid books by default). */
+export function individualTotal(count: number = PAID_BOOKS.length): number {
+  return count * PACKAGES.individual.price;
+}
+
+/** Checkout with a package (and optionally one of its books) already selected. */
+export function packageCheckoutHref(id: PackageId, bookSlug?: string): string {
+  if (id === "five_book_bundle") return `/checkout/${BUNDLE_SLUG}`;
+  return `/checkout?package=${id}${bookSlug ? `&book=${encodeURIComponent(bookSlug)}` : ""}`;
+}
+
+/** How much a bundle saves compared with buying its books individually. */
+export function packageSaving(id: PackageId): number {
+  const pkg = PACKAGES[id];
+  return Math.max(0, individualTotal(pkg.books) - pkg.price);
+}
+
+/** Single paid books (bundles are packages, see src/config/packages.ts). */
 export function getAllProducts(): Product[] {
-  const products: Product[] = PAID_BOOKS.map((b) => ({
+  return PAID_BOOKS.map((b) => ({
     slug: b.slug,
     title: b.title,
     author: b.author,
     label: b.label,
     price: b.price,
   }));
-  if (bundleEnabled()) {
-    products.push({
-      slug: BUNDLE_SLUG,
-      title: `Complete Series (${volumeRange(PAID_BOOKS)})`,
-      author: PAID_BOOKS.map((b) => b.author).join(", "),
-      label: `Complete Series — All ${PAID_BOOKS.length} Paid Volumes`,
-      price: CONFIG.SERIES_BUNDLE.price,
-    });
-  }
-  return products;
 }
 
 /** Only paid products — a free book can never be looked up here, so it can never reach the payment page or the order API. */
@@ -139,5 +162,5 @@ export function getProduct(slug: string): Product | undefined {
 }
 
 export function formatINR(amount: number): string {
-  return `₹${amount.toLocaleString("en-IN")}`;
+  return formatMoney(amount, "INR");
 }

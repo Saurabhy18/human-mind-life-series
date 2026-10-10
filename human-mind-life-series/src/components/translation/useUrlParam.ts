@@ -11,7 +11,7 @@ function subscribe(cb: () => void) {
   };
 }
 
-/** Reads a parameter from the URL fragment (#t=…) or query (?lang=…) without hydration mismatches. Null on the server. */
+/** Reads a parameter from the URL fragment (#t=…) or query without hydration mismatches. Null on the server. */
 export function useUrlParam(name: string, where: "hash" | "query", pattern: RegExp): string | null {
   return useSyncExternalStore(
     subscribe,
@@ -25,4 +25,3 @@ export function useUrlParam(name: string, where: "hash" | "query", pattern: RegE
 }
 
 export const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-export const LANG_RE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;

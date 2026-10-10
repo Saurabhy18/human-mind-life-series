@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/server/auth";
-import { amountMismatch, countOrdersByStatus, listOrders, orderAuthor } from "@/lib/server/orders";
+import { amountMismatch, countOrdersByStatus, itemsForOrders, listOrders, orderAuthor } from "@/lib/server/orders";
 import { ORDER_STATUSES, STATUS_LABELS, isOrderStatus } from "@/lib/order-status";
 import { formatINR } from "@/lib/products";
 import { formatDate, StatusBadge } from "@/components/admin/StatusBadge";
@@ -13,6 +13,8 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   const status = isOrderStatus(sp.status) ? sp.status : undefined;
   const q = typeof sp.q === "string" ? sp.q.trim().slice(0, 100) : "";
   const orders = listOrders({ status, q: q || undefined });
+  const items = itemsForOrders(orders.map((o) => o.id));
+  const languages = (id: number) => [...new Set((items.get(id) ?? []).map((i) => i.target_language))].join(", ");
   const counts = countOrdersByStatus();
 
   const tabs = [{ key: undefined, label: "All", n: counts.all }, ...ORDER_STATUSES.map((s) => ({ key: s, label: STATUS_LABELS[s], n: counts[s] }))];
@@ -60,7 +62,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                 <tr>
                   <th className="px-4 py-3">Ref / Date</th>
                   <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Book</th>
+                  <th className="px-4 py-3">Package / Books</th>
                   <th className="px-4 py-3">Amount / Paid</th>
                   <th className="px-4 py-3">UTR</th>
                   <th className="px-4 py-3">Language / Delivery</th>
@@ -95,7 +97,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs">{o.utr}</td>
                     <td className="px-4 py-3 text-xs">
-                      <p className="font-semibold uppercase">{o.target_language}</p>
+                      <p className="font-semibold uppercase">{languages(o.id) || o.target_language}</p>
                       <p className="text-muted">{o.payment_status} · {o.fulfillment_status.replace("_", " ")}</p>
                       <p className="text-muted">{o.download_count} download{o.download_count === 1 ? "" : "s"}</p>
                     </td>
@@ -129,7 +131,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
                     <StatusBadge status={o.status} />
                   </div>
                   <p className="mt-3 font-medium">{o.buyer_name}</p>
-                  <p className="text-sm text-muted">{o.product_title} · {orderAuthor(o)}</p>
+                  <p className="text-sm text-muted">{o.product_title} · {orderAuthor(o)} · <span className="uppercase">{languages(o.id)}</span></p>
                   <div className="mt-2 flex justify-between text-sm">
                     <span className="font-mono text-xs">UTR {o.utr}</span>
                     <span className={`font-semibold ${amountMismatch(o) ? "text-danger" : ""}`}>

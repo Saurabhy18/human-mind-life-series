@@ -23,6 +23,11 @@
 # misc
 .DS_Store
 *.pem
+# credentials (Google service-account keys, private keys) — keep them outside the project
+*service-account*.json
+*credentials*.json
+*.p12
+*.key
 
 # debug
 npm-debug.log*
@@ -43,6 +48,12 @@ next-env.d.ts
 
 # private data: orders database, payment screenshots, book PDFs
 /storage/
+# database files and downloaded backups anywhere in the project (never commit customer data)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
 # alternative build folders used for testing (NEXT_DIST_DIR)
 /.next-*/

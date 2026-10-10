@@ -1,4 +1,5 @@
 import { ALL_BOOKS, formatPrice, getBook } from "@/lib/products";
+import { discountPercent } from "@/config/packages";
 import { renderOgImage } from "@/lib/og";
 
 /** Social-sharing image for each book: /og/books/<slug> (1200×630 PNG). */
@@ -12,7 +13,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const book = getBook((await params).slug);
   if (!book) return new Response("Not found", { status: 404 });
   return renderOgImage({
-    eyebrow: book.free ? "FREE BOOK" : `${book.volumeLabel ?? book.title} · ${formatPrice(book)}`,
+    eyebrow: book.free ? "FREE BOOK" : `${book.volumeLabel ?? book.title} · ${formatPrice(book)}${book.originalPrice ? ` (${discountPercent(book.price, book.originalPrice)}% OFF)` : ""}`,
     title: book.title,
     subtitle: book.tagline,
     byline: `by ${book.author}`,

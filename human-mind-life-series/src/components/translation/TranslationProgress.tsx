@@ -2,41 +2,43 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatMoney } from "@/config/packages";
 import { IconCheck, IconClock } from "../icons";
 import { DownloadButton } from "./DownloadButton";
 import { TOKEN_RE, useUrlParam } from "./useUrlParam";
 
-type Status = {
-  orderId: string;
-  paymentStatus: string;
-  fulfillmentStatus: string;
-  stage: "PAYMENT_PENDING" | "PAYMENT_FAILED" | "PAYMENT_SUCCESSFUL" | "PREPARING" | "TRANSLATING" | "GENERATING" | "READY" | "EXPIRED" | "FAILED" | "MANUAL_DELIVERY";
+type Stage = "PAYMENT_PENDING" | "PAYMENT_FAILED" | "PAYMENT_SUCCESSFUL" | "PREPARING" | "TRANSLATING" | "GENERATING" | "READY" | "EXPIRED" | "FAILED" | "MANUAL_DELIVERY";
+
+type Item = {
+  itemId: number;
+  title: string;
+  volumeLabel: string | null;
+  languageName: string;
+  stage: Stage;
   progress: number;
-  targetLanguage: string;
   downloadsRemaining: number;
   accessExpiresAt: string | null;
 };
 
-const LABEL: Record<Status["stage"], string> = {
-  PAYMENT_PENDING: "Payment Pending",
-  PAYMENT_FAILED: "Payment Failed",
-  PAYMENT_SUCCESSFUL: "Payment Successful",
-  PREPARING: "Preparing Your Book",
-  TRANSLATING: "Translating",
-  GENERATING: "Generating Book",
-  READY: "Ready for Download",
-  EXPIRED: "Download Period Ended",
-  FAILED: "Failed",
-  MANUAL_DELIVERY: "Payment Successful",
+type Status = {
+  orderId: string;
+  packageName: string;
+  amount: number;
+  currency: string;
+  paymentStatus: string;
+  stage: Stage;
+  items: Item[];
 };
 
-/** Customer order page: polls GET /api/orders/:id/status and shows progress, then the download button. */
+const WORKING: Stage[] = ["PAYMENT_SUCCESSFUL", "PREPARING", "TRANSLATING", "GENERATING"];
+const FINAL: Stage[] = ["READY", "EXPIRED", "FAILED", "PAYMENT_FAILED", "MANUAL_DELIVERY"];
+
+/** Customer order page: polls GET /api/orders/:id/status and shows each ebook's progress, then its download button. */
 export function TranslationProgress({ orderRef, gateway }: { orderRef: string; gateway: boolean }) {
   const token = useUrlParam("t", "hash", TOKEN_RE);
   const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState("");
-  const [languageName, setLanguageName] = useState<string>("");
   const verified = useRef(false);
 
   useEffect(() => {
@@ -71,7 +73,7 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
     const first = setTimeout(load, 0);
     const id = setInterval(() => {
       setStatus((s) => {
-        if (!s || !["READY", "EXPIRED", "FAILED", "PAYMENT_FAILED", "MANUAL_DELIVERY"].includes(s.stage)) load();
+        if (!s || !FINAL.includes(s.stage)) load();
         return s;
       });
     }, 4000);
@@ -80,14 +82,6 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       clearInterval(id);
     };
   }, [token, load]);
-
-  useEffect(() => {
-    if (!status) return;
-    fetch("/api/languages")
-      .then((r) => r.json())
-      .then((d: { languages?: { code: string; name: string }[] }) => setLanguageName(d.languages?.find((l) => l.code === status.targetLanguage)?.name ?? status.targetLanguage))
-      .catch(() => setLanguageName(status.targetLanguage));
-  }, [status?.targetLanguage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (hydrated && !token && !error) {
     return (
@@ -107,61 +101,107 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
   }
   if (!status) return <div className="card p-8 text-center text-muted">Loading your order…</div>;
 
-  const lang = languageName || status.targetLanguage;
-  const working = ["PAYMENT_SUCCESSFUL", "PREPARING", "TRANSLATING", "GENERATING"].includes(status.stage);
-  const blocks = 20;
-  const filled = Math.round((status.progress / 100) * blocks);
+  const paid = status.paymentStatus === "PAID";
+  const many = status.items.length > 1;
+  const allReady = status.items.every((i) => i.stage === "READY");
+  const working = status.items.some((i) => WORKING.includes(i.stage));
 
   return (
-    <div className="card p-8 text-center sm:p-10">
-      <p className="text-sm text-muted">Order {status.orderId}</p>
-      {status.paymentStatus === "PAID" && (
-        <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-1.5 text-sm font-semibold text-success">
-          <IconCheck width={16} /> Payment Successful
+    <div className="card p-8 sm:p-10">
+      <div className="text-center">
+        <p className="text-sm text-muted">
+          Order {status.orderId} · {status.packageName} · {formatMoney(status.amount, status.currency)}
         </p>
-      )}
-      <h2 className="mt-5 text-3xl">
-        {status.stage === "READY" ? "Your book is ready! ✓" : LABEL[status.stage]}
-      </h2>
-
-      {status.stage === "PAYMENT_PENDING" && (
-        <p className="mx-auto mt-4 max-w-md text-muted">
-          {gateway ? "We are waiting for confirmation from the payment gateway. This page updates automatically." : "Your payment is being verified manually. This page updates automatically once it is confirmed."}
-        </p>
-      )}
-      {status.stage === "PAYMENT_FAILED" && <p className="mx-auto mt-4 max-w-md text-muted">The payment could not be completed. No book has been issued. Please try again or contact us.</p>}
-      {status.stage === "MANUAL_DELIVERY" && <p className="mx-auto mt-4 max-w-md text-muted">Your payment is confirmed. Your book will be sent to your email / WhatsApp.</p>}
-
-      {working && (
-        <div className="mx-auto mt-6 max-w-md">
-          <p className="text-muted">Your {lang} book is being prepared.</p>
-          <p className="mt-5 text-sm font-medium">Translation Progress</p>
-          <div className="mt-2 font-mono text-lg tracking-tight text-gold-dark" aria-hidden="true">
-            {"█".repeat(filled)}
-            <span className="text-line">{"░".repeat(blocks - filled)}</span> <span className="text-ink">{status.progress}%</span>
-          </div>
-          <div className="sr-only" role="progressbar" aria-valuenow={status.progress} aria-valuemin={0} aria-valuemax={100} />
-          <p className="mt-3 flex items-center justify-center gap-2 text-sm text-muted">
-            <IconClock width={16} /> Please wait… you can also close this page — we will email you when it&apos;s ready.
+        {paid && (
+          <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-1.5 text-sm font-semibold text-success">
+            <IconCheck width={16} /> Payment Successful
           </p>
-        </div>
-      )}
+        )}
+        <h2 className="mt-5 text-3xl">
+          {status.stage === "PAYMENT_PENDING"
+            ? "Payment Pending"
+            : status.stage === "PAYMENT_FAILED"
+              ? "Payment Failed"
+              : allReady
+                ? `Your ${many ? "ebooks are" : "ebook is"} ready! ✓`
+                : "Thank you for your purchase."}
+        </h2>
 
-      {status.stage === "READY" && token && (
-        <div className="mx-auto mt-6 max-w-sm">
-          <p className="text-muted">Language: <strong className="text-ink">{lang}</strong></p>
-          <DownloadButton orderRef={status.orderId} token={token} remaining={status.downloadsRemaining} onDone={load} />
-          {status.accessExpiresAt && (
-            <p className="mt-3 text-xs text-muted">
-              Download link expires {new Date(status.accessExpiresAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} · {status.downloadsRemaining} download(s) left
-            </p>
-          )}
-        </div>
-      )}
-      {status.stage === "EXPIRED" && <p className="mx-auto mt-4 max-w-md text-muted">The download period for this order has ended. Please contact us with your order reference and we will help.</p>}
-      {status.stage === "FAILED" && (
-        <p className="mx-auto mt-4 max-w-md text-muted">We were unable to prepare your book. Our team has been notified and will retry — you don&apos;t need to pay again.</p>
+        {status.stage === "PAYMENT_PENDING" && (
+          <p className="mx-auto mt-4 max-w-md text-muted">
+            {gateway ? "We are waiting for confirmation from the payment gateway." : "Your payment is being verified."} Please wait — this page updates automatically.
+          </p>
+        )}
+        {status.stage === "PAYMENT_FAILED" && <p className="mx-auto mt-4 max-w-md text-muted">Payment could not be completed. Please try again. No ebook has been issued.</p>}
+        {paid && working && <p className="mx-auto mt-4 max-w-md text-muted">Your {many ? "ebooks are" : "ebook is"} being prepared. You can download each one as soon as it is ready.</p>}
+      </div>
+
+      <ul className="mt-8 divide-y divide-line border-y border-line">
+        {status.items.map((item) => (
+          <li key={item.itemId} className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              {item.volumeLabel && <p className="eyebrow">{item.volumeLabel}</p>}
+              <p className="font-serif text-lg leading-snug">
+                {item.title} <span className="text-muted">— {item.languageName}</span>
+              </p>
+              {paid && <ItemState item={item} />}
+            </div>
+            {paid && item.stage === "READY" && token && (
+              <div className="sm:w-56">
+                <DownloadButton orderRef={status.orderId} itemId={item.itemId} token={token} remaining={item.downloadsRemaining} onDone={load} />
+                {item.accessExpiresAt && (
+                  <p className="mt-2 text-center text-xs text-muted">
+                    Until {new Date(item.accessExpiresAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} · {item.downloadsRemaining} download(s) left
+                  </p>
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {paid && working && (
+        <p className="mt-5 flex items-center justify-center gap-2 text-center text-sm text-muted">
+          <IconClock width={16} /> You can close this page — we will email you when your {many ? "ebooks are" : "ebook is"} ready.
+        </p>
       )}
     </div>
   );
+}
+
+/** One ebook's status: ✓ Ready · ⏳ Preparing · ⏳ Processing (with progress) · Failed · manual delivery · expired. */
+function ItemState({ item }: { item: Item }) {
+  if (item.stage === "READY") {
+    return (
+      <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-success">
+        <IconCheck width={14} /> Ready
+      </p>
+    );
+  }
+  if (WORKING.includes(item.stage)) {
+    const processing = item.stage === "TRANSLATING" || item.stage === "GENERATING";
+    const blocks = 20;
+    const filled = Math.round((item.progress / 100) * blocks);
+    return (
+      <div className="mt-1 text-sm text-muted">
+        <p className="inline-flex items-center gap-1.5 font-semibold text-gold-dark">
+          <IconClock width={14} /> {processing ? "Processing" : "Preparing"}…
+        </p>
+        <p className="mt-0.5">Your selected-language ebook is being prepared.</p>
+        {processing && (
+          <>
+            <p className="mt-1 font-mono tracking-tight text-gold-dark" aria-hidden="true">
+              {"█".repeat(filled)}
+              <span className="text-line">{"░".repeat(blocks - filled)}</span> <span className="text-ink">{item.progress}%</span>
+            </p>
+            <div className="sr-only" role="progressbar" aria-valuenow={item.progress} aria-valuemin={0} aria-valuemax={100} />
+          </>
+        )}
+      </div>
+    );
+  }
+  if (item.stage === "FAILED") return <p className="mt-1 text-sm text-danger">We could not prepare this language version yet. Please try again later — our team has been notified, and you don&apos;t need to pay again.</p>;
+  if (item.stage === "MANUAL_DELIVERY") return <p className="mt-1 text-sm text-muted">This ebook will be sent to your email / WhatsApp.</p>;
+  if (item.stage === "EXPIRED") return <p className="mt-1 text-sm text-muted">The download period for this ebook has ended. Please contact us with your order reference and we will help.</p>;
+  return null;
 }

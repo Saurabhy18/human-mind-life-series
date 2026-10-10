@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   if (![...getAllProducts(), ...FREE_BOOKS].some((p) => p.slug === slug)) return new Response("Not found", { status: 404 });
 
   try {
-    const data = await fs.readFile(path.join(PRIVATE_BOOKS_DIR, `${slug}.pdf`));
+    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${slug}.pdf`));
     return new Response(new Uint8Array(data), {
       headers: {
         "Content-Type": "application/pdf",

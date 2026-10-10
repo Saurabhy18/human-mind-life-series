@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BUSINESS_EMAIL, CONFIG } from "@/config/site.config";
+import { BUSINESS_EMAIL, CONFIG, SITE_URL } from "@/config/site.config";
 import { pageMetadata } from "@/lib/seo";
 import { LegalPage } from "@/components/LegalPage";
 
@@ -12,6 +12,8 @@ export const metadata: Metadata = pageMetadata({
 
 export default function PrivacyPolicyPage() {
   const analyticsOn = !!(CONFIG.GOOGLE_ANALYTICS_ID || CONFIG.GOOGLE_ADS_ID || CONFIG.META_PIXEL_ID);
+  // Only claim HTTPS for a production build with a real https:// domain configured — never for a local or placeholder site.
+  const httpsSite = process.env.NODE_ENV === "production" && SITE_URL.startsWith("https://") && !SITE_URL.includes("example.com");
   return (
     <LegalPage title="Privacy Policy" intro="Your privacy matters to us. This policy explains what information we collect, why we collect it and how we protect it.">
       <p>
@@ -97,7 +99,7 @@ export default function PrivacyPolicyPage() {
 
       <h2>6. Data security</h2>
       <ul>
-        <li>The website is served over a secure, encrypted HTTPS connection.</li>
+        {httpsSite && <li>The website is served over a secure, encrypted HTTPS connection.</li>}
         <li>Payment screenshots are stored in private storage that cannot be accessed through a public web address.</li>
         <li>Uploaded files are checked to ensure they are genuine image files and are renamed with random names.</li>
         <li>The admin area is protected by a password and secure, time-limited sessions.</li>
@@ -120,7 +122,7 @@ export default function PrivacyPolicyPage() {
 
       <h2>9. Children</h2>
       <p>
-        This website is not directed at children. Purchases should be made by adults. Volume 5 of the series is intended only for readers aged 18 and above.
+        This website is not directed at children. Purchases should be made by adults. Volume 5 of the series and The Intimacy Code are intended only for readers aged 18 and above.
       </p>
 
       <h2>10. Changes to this policy</h2>

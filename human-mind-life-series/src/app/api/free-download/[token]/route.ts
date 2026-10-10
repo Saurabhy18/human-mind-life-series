@@ -40,7 +40,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   }
 
   try {
-    const data = await fs.readFile(path.join(PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
+    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
     const fileName = `${book.label.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}.pdf`;
     return new Response(new Uint8Array(data), {
       headers: {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getGeneralFaqs } from "@/content/faqs";
+import { checkoutMode } from "@/lib/server/paymentService";
 import { breadcrumbSchema, faqSchema, pageMetadata } from "@/lib/seo";
 import { FaqList } from "@/components/FaqList";
 import { JsonLd } from "@/components/JsonLd";
@@ -8,12 +9,12 @@ import { PageHeader } from "@/components/PageHeader";
 
 export const metadata: Metadata = pageMetadata({
   title: "Frequently Asked Questions",
-  description: "How to buy, pay by UPI, submit your UTR number and receive your books from The Human Mind & Life Series.",
+  description: "How to buy, pay for and receive your books from The Human Mind & Life Series.",
   path: "/faq",
 });
 
 export default function FaqPage() {
-  const faqs = getGeneralFaqs();
+  const faqs = getGeneralFaqs(checkoutMode());
   return (
     <>
       <JsonLd data={[faqSchema(faqs), breadcrumbSchema([{ name: "Home", path: "/" }, { name: "FAQ", path: "/faq" }])]} />

@@ -5,8 +5,9 @@ import { notFound } from "next/navigation";
 import { CONFIG } from "@/config/site.config";
 import { requireAdmin } from "@/lib/server/auth";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
-import { amountMismatch, getOrder, getOrderEvents, orderAuthor } from "@/lib/server/orders";
+import { amountMismatch, getOrder, getOrderEvents, getOrderItems, orderAuthor } from "@/lib/server/orders";
 import { ORDER_STATUSES, STATUS_LABELS } from "@/lib/order-status";
+import { getPackage } from "@/config/packages";
 import { formatINR } from "@/lib/products";
 import { mailtoLink, whatsappLink } from "@/lib/contact";
 import { formatDate, StatusBadge } from "@/components/admin/StatusBadge";
@@ -22,12 +23,12 @@ export default async function AdminOrderPage({ params }: Props) {
   if (!order) notFound();
 
   const events = getOrderEvents(order.id);
-  const job = orderJob(order.cache_key);
+  const items = getOrderItems(order.id).map((i) => ({ ...i, job: orderJob(i.cache_key), pdfAvailable: fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${i.book_slug}.pdf`)) }));
   const downloads = orderDownloads(order.id);
   const utm = order.utm_json ? (JSON.parse(order.utm_json) as Record<string, string>) : null;
-  const pdfAvailable = fs.existsSync(path.join(PRIVATE_BOOKS_DIR, `${order.product_slug}.pdf`));
+  const bookList = items.map((i) => `- ${i.book_title} (${i.target_language})`).join("\n");
 
-  const deliveryMessage = `Hello ${order.buyer_name},\n\nThank you for your purchase! Your payment for "${order.product_title}" (order ${order.ref}) has been verified. Please find your book attached.\n\nThis copy is for your personal use only. Please do not share or distribute it.\n\nHappy reading!\n${CONFIG.SITE_NAME}`;
+  const deliveryMessage = `Hello ${order.buyer_name},\n\nThank you for your purchase! Your payment for order ${order.ref} has been verified. Please find your ${items.length > 1 ? "ebooks" : "ebook"} attached:\n${bookList}\n\nThis copy is for your personal use only. Please do not share or distribute it.\n\nHappy reading!\n${CONFIG.SITE_NAME}`;
   const rejectMessage = `Hello ${order.buyer_name},\n\nWe were unable to verify your payment for "${order.product_title}" (order ${order.ref}, UTR ${order.utr}). Please reply with your payment details so we can check again.\n\n${CONFIG.SITE_NAME}`;
 
   const waDeliver = whatsappLink(deliveryMessage, order.whatsapp);
@@ -51,7 +52,8 @@ export default async function AdminOrderPage({ params }: Props) {
               <Item label="Customer name" value={order.buyer_name} />
               <Item label="Email" value={<a className="underline" href={`mailto:${order.email}`}>{order.email}</a>} />
               <Item label="WhatsApp" value={<a className="underline" href={whatsappLink(undefined, order.whatsapp) ?? "#"} target="_blank" rel="noopener noreferrer">+{order.whatsapp}</a>} />
-              <Item label="Book purchased" value={order.product_title} />
+              <Item label="Package" value={getPackage(order.package_type)?.name ?? order.package_type} />
+              <Item label="Book(s) purchased" value={order.product_title} />
               <Item label="Author" value={orderAuthor(order) || "—"} />
               <Item label="Amount (expected)" value={<strong>{formatINR(order.amount)}</strong>} />
               <Item
@@ -102,35 +104,56 @@ export default async function AdminOrderPage({ params }: Props) {
 
         <div className="space-y-6">
           <section className="card p-6">
-            <h2 className="text-xl">Language &amp; delivery</h2>
+            <h2 className="text-xl">Ebooks, languages &amp; delivery</h2>
             <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-              <Item label="Language" value={<span className="font-mono">{order.source_language} → {order.target_language}</span>} />
               <Item label="Payment" value={`${order.payment_status} (${order.payment_provider})`} />
-              <Item label="Book delivery" value={order.fulfillment_status.replace("_", " ")} />
-              <Item label="Downloads used" value={`${order.download_count}`} />
-              {job && <Item label="Translation job" value={`${job.status}${job.phase ? ` · ${job.phase}` : ""} · ${job.progress}% · ${job.attempts} attempt(s)`} />}
-              <Item label="Download access until" value={formatDate(order.access_expires_at)} />
+              <Item label="Delivery (overall)" value={order.fulfillment_status.replace("_", " ")} />
             </dl>
-            {job?.last_error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-800">{job.last_error}</p>}
+            <ul className="mt-4 divide-y divide-line border-y border-line text-sm">
+              {items.map((i) => (
+                <li key={i.id} className="py-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium">{i.book_title}</span>
+                    <span className="font-mono text-xs">{i.source_language} → {i.target_language}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    {i.fulfillment_status.replace("_", " ")}
+                    {i.job && ` · job ${i.job.status}${i.job.phase ? ` ${i.job.phase}` : ""} ${i.job.progress}% · ${i.job.attempts} attempt(s)`} · {i.download_count} download(s)
+                    {i.access_expires_at && ` · access until ${formatDate(i.access_expires_at)}`}
+                    {i.translated_book_id && (
+                      <>
+                        {" · "}
+                        <a className="text-gold-dark underline" href={`/api/admin/translations/${i.translated_book_id}/file`}>Delivered PDF</a>
+                      </>
+                    )}
+                  </p>
+                  {i.job?.last_error && i.job.status !== "COMPLETED" && <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-800">{i.job.last_error}</p>}
+                  {i.job?.status === "FAILED" && (
+                    <form action={retryTranslationAction} className="mt-2">
+                      <input type="hidden" name="jobId" value={i.job.id} />
+                      <button className="btn-outline px-3 py-1.5 text-xs">Retry translation</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
             <div className="mt-5 space-y-3">
-              {job?.status === "FAILED" && (
-                <form action={retryTranslationAction}>
-                  <input type="hidden" name="jobId" value={job.id} />
-                  <button className="btn-outline w-full">Retry translation</button>
-                </form>
-              )}
-              {order.payment_status === "PAID" && order.fulfillment_status === "NOT_STARTED" && (
+              {order.payment_status === "PAID" && items.some((i) => i.fulfillment_status === "NOT_STARTED" || i.fulfillment_status === "FAILED") && (
                 <form action={restartFulfillmentAction}>
                   <input type="hidden" name="id" value={order.id} />
-                  <button className="btn-outline w-full">Start automatic delivery</button>
+                  <button className="btn-outline w-full">{items.some((i) => i.fulfillment_status === "FAILED") ? "Retry automatic delivery" : "Start automatic delivery"}</button>
+                  <p className="mt-1 text-xs text-muted">Uses the PDFs currently in storage/books/ (e.g. after uploading a missing or corrected source PDF).</p>
                 </form>
               )}
-              <OrderLinkTools orderId={order.id} canEmail={order.fulfillment_status === "COMPLETED"} />
+              <OrderLinkTools orderId={order.id} canEmail={items.some((i) => i.fulfillment_status === "COMPLETED")} />
             </div>
             {downloads.length > 0 && (
               <ul className="mt-4 space-y-1 border-t border-line pt-3 text-xs text-muted">
                 {downloads.map((d, i) => (
-                  <li key={i}>{d.event} · {formatDate(d.created_at)}</li>
+                  <li key={i}>
+                    {d.event}
+                    {d.book_title && ` · ${d.book_title} (${d.target_language})`} · {formatDate(d.created_at)}
+                  </li>
                 ))}
               </ul>
             )}
@@ -158,19 +181,23 @@ export default async function AdminOrderPage({ params }: Props) {
           </section>
 
           <section className="card p-6">
-            <h2 className="text-xl">Deliver the book</h2>
+            <h2 className="text-xl">Deliver the {items.length > 1 ? "ebooks" : "book"}</h2>
             <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted">
-              <li>Confirm the payment and set status to <strong>Payment Verified</strong>.</li>
-              <li>Download the PDF and send it by email or WhatsApp (message is pre-written).</li>
+              <li>Confirm the payment and set status to <strong>Payment Verified</strong>. Ebooks with a source PDF are then delivered automatically.</li>
+              <li>For any ebook still shown as <strong>NOT STARTED</strong>, download the PDF and send it by email or WhatsApp (message is pre-written).</li>
               <li>Set status to <strong>Book Delivered</strong>.</li>
             </ol>
             <div className="mt-5 space-y-3">
-              {pdfAvailable ? (
-                <a href={`/api/admin/books/${order.product_slug}/pdf`} className="btn-outline w-full">Download PDF</a>
-              ) : (
-                <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
-                  No PDF found at <code>storage/books/{order.product_slug}.pdf</code>. Upload it there on the server (it stays private), or attach it from your computer.
-                </p>
+              {items.map((i) =>
+                i.pdfAvailable ? (
+                  <a key={i.id} href={`/api/admin/books/${i.book_slug}/pdf`} className="btn-outline w-full">
+                    Download English PDF — {i.book_title}
+                  </a>
+                ) : (
+                  <p key={i.id} className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                    No PDF found at <code>storage/books/{i.book_slug}.pdf</code>. Upload it there on the server (it stays private), or attach it from your computer.
+                  </p>
+                ),
               )}
               {mailDeliver && <a href={mailDeliver} className="btn-outline w-full">Open delivery email</a>}
               {waDeliver && <a href={waDeliver} target="_blank" rel="noopener noreferrer" className="btn-outline w-full">Open WhatsApp chat</a>}

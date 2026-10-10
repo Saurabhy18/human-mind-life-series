@@ -2,9 +2,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { CONFIG } from "@/config/site.config";
 import { SERIES } from "@/content/books";
-import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bookActionLabel, bundleEnabled, formatINR, formatPrice, individualTotal } from "@/lib/products";
+import { PACKAGES } from "@/config/packages";
+import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bookActionLabel, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
 import { pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";
+import { OfferCountdown } from "@/components/OfferCountdown";
+import { BookPrice } from "@/components/BookPrice";
 import { HowToBuy } from "@/components/HowToBuy";
 import { IconArrowRight, IconCheck } from "@/components/icons";
 
@@ -38,7 +41,7 @@ export default function SeriesLandingPage() {
           <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
             {bundleEnabled() ? (
               <Link href={`/checkout/${BUNDLE_SLUG}`} className="btn-gold px-10 py-4 text-base">
-                Get all {PAID_BOOKS.length} paid volumes for {formatINR(CONFIG.SERIES_BUNDLE.price)} <IconArrowRight />
+                Get all {PAID_BOOKS.length} paid volumes for {formatINR(bundlePrice())} <IconArrowRight />
               </Link>
             ) : (
               <a href="#volumes" className="btn-gold px-10 py-4 text-base">
@@ -56,7 +59,10 @@ export default function SeriesLandingPage() {
           ))}
           {bundleEnabled() && (
             <p className="mt-3 text-sm text-white/60">
-              Individually <span className="line-through">{formatINR(individualTotal())}</span>
+              Individually <span className="line-through">{formatINR(individualTotal())}</span> ·{" "}
+              <Link href={packageCheckoutHref("three_book_bundle")} className="underline underline-offset-2 hover:text-white">
+                or any {PACKAGES.three_book_bundle.books} books for {formatINR(PACKAGES.three_book_bundle.price)}
+              </Link>
             </p>
           )}
         </div>
@@ -64,7 +70,8 @@ export default function SeriesLandingPage() {
 
       <section id="volumes" className="container-page scroll-mt-4 py-16 sm:py-20">
         <h2 className="text-center text-3xl sm:text-4xl">The six volumes</h2>
-        <div className="mx-auto mt-10 max-w-4xl space-y-4">
+        <OfferCountdown variant="banner" scope={volumeRange(PAID_BOOKS)} className="mx-auto mt-10 max-w-4xl" />
+        <div className="mx-auto mt-6 max-w-4xl space-y-4">
           {ALL_BOOKS.map((b) => (
             <article key={b.slug} className="card flex flex-col gap-5 p-5 sm:flex-row sm:items-center">
               <div className="flex flex-1 items-center gap-5">
@@ -82,7 +89,7 @@ export default function SeriesLandingPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
-                <p className={`font-serif text-2xl ${b.free ? "font-semibold text-success" : ""}`}>{formatPrice(b)}</p>
+                <p className={`font-serif text-2xl ${b.free ? "font-semibold text-success" : ""}`}><BookPrice book={b} align="end" /></p>
                 <div className="flex gap-2">
                   <Link href={`/lp/${b.slug}`} className="btn-outline px-4 py-2.5">Details</Link>
                   <Link href={b.free ? `/lp/${b.slug}#get-free` : bookActionHref(b)} className={`${b.free ? "btn-free" : "btn-primary"} px-4 py-2.5`}>

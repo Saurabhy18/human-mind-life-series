@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { CONFIG, SITE_URL, isPlaceholder } from "@/config/site.config";
+import { CONFIG, SITE_URL, SITE_URL_IS_PLACEHOLDER, isPlaceholder } from "@/config/site.config";
 import { requireAdmin } from "@/lib/server/auth";
-import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
+import { PRIVATE_BOOKS_DIR, storageStatus } from "@/lib/server/db";
 import { upiQrAvailable } from "@/lib/server/qr";
+import { checkoutMode } from "@/lib/server/paymentService";
+import { bookDeliverable } from "@/lib/server/translation/bookSource";
 import { ALL_BOOKS, FREE_BOOKS, getAllProducts } from "@/lib/products";
 import { SERIES } from "@/content/books";
 
@@ -11,15 +13,41 @@ type Check = { key: string; ok: boolean; hint: string };
 
 export default async function AdminSetupPage() {
   await requireAdmin();
+  const mode = checkoutMode();
+  const storage = storageStatus();
 
   const checks: Check[] = [
-    { key: "SITE_URL", ok: !SITE_URL.includes("example.com"), hint: "Your live domain (needed for SEO, sitemap and sharing)." },
+    {
+      key: "Checkout (PAYMENT_PROVIDER)",
+      ok: mode !== "closed",
+      hint:
+        mode === "gateway"
+          ? "Razorpay checkout is on."
+          : mode === "upi"
+            ? "Manual UPI checkout is on (PAYMENT_PROVIDER=manual_upi)."
+            : "Closed — no orders or payments are accepted. After Razorpay approves your account, set PAYMENT_PROVIDER=razorpay and the Razorpay keys on the server (README §9.3), then rebuild.",
+    },
+    {
+      key: "Private storage (STORAGE_DIR)",
+      ok: storage.writable && !storage.ephemeral,
+      hint: !storage.writable
+        ? `Not writable: ${storage.dir}. Fix the folder permissions or set STORAGE_DIR.`
+        : storage.ephemeral
+          ? `${storage.dir} is inside a build/deployment or public folder — data would be lost or exposed. Set STORAGE_DIR to a persistent private folder.`
+          : `${storage.dir} — orders.db, payment screenshots and book PDFs live here.`,
+    },
+    { key: "SITE_URL", ok: !SITE_URL_IS_PLACEHOLDER, hint: "Your live domain: set NEXT_PUBLIC_SITE_URL=https://YOUR-DOMAIN.com on the server and rebuild (needed for SEO, sitemap and sharing)." },
     { key: "AUTHOR_EMAIL", ok: !isPlaceholder(CONFIG.AUTHOR_EMAIL), hint: "Contact email." },
     { key: "WHATSAPP_NUMBER", ok: !isPlaceholder(CONFIG.WHATSAPP_NUMBER), hint: "Digits with country code, e.g. 919876543210." },
     { key: "BUSINESS_LOCATION", ok: !isPlaceholder(CONFIG.BUSINESS_LOCATION), hint: "City/state for the Terms & Conditions." },
-    { key: "UPI_ID", ok: !isPlaceholder(CONFIG.UPI_ID), hint: "Your UPI ID." },
-    { key: "UPI_PAYEE_NAME", ok: !isPlaceholder(CONFIG.UPI_PAYEE_NAME), hint: "Name shown in UPI apps." },
-    { key: "UPI_QR_CODE", ok: upiQrAvailable(), hint: `Copy your original, unedited QR image to public${CONFIG.UPI_QR_CODE || "/images/upi-qr.png"}.` },
+    // The UPI details matter only for the opt-in manual UPI checkout.
+    ...(mode === "upi"
+      ? [
+          { key: "UPI_ID", ok: !isPlaceholder(CONFIG.UPI_ID), hint: "Your UPI ID." },
+          { key: "UPI_PAYEE_NAME", ok: !isPlaceholder(CONFIG.UPI_PAYEE_NAME), hint: "Name shown in UPI apps." },
+          { key: "UPI_QR_CODE", ok: upiQrAvailable(), hint: `Copy your original, unedited QR image to public${CONFIG.UPI_QR_CODE || "/images/upi-qr.png"}.` },
+        ]
+      : []),
     ...ALL_BOOKS.map((b) => ({
       key: `BOOK_COVER_${b.volume}`,
       ok: !!b.cover,
@@ -36,7 +64,11 @@ export default async function AdminSetupPage() {
     { key: "YOUTUBE_URL", ok: !isPlaceholder(CONFIG.YOUTUBE_URL), hint: "Hidden on the live site until set." },
   ];
 
-  const pdfs = [...getAllProducts(), ...FREE_BOOKS.map((b) => ({ slug: b.slug, label: `${b.label} (FREE)` }))].map((p) => ({ slug: p.slug, label: p.label, ok: fs.existsSync(path.join(PRIVATE_BOOKS_DIR, `${p.slug}.pdf`)) }));
+  // Paid books can be ordered only when their PDF is present AND opens as a valid PDF.
+  const pdfs = [
+    ...(await Promise.all(getAllProducts().map(async (p) => ({ slug: p.slug, label: p.label, ok: await bookDeliverable(p.slug) })))),
+    ...FREE_BOOKS.map((b) => ({ slug: b.slug, label: `${b.label} (FREE)`, ok: fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${b.slug}.pdf`)) })),
+  ];
   const done = checks.filter((c) => c.ok).length;
 
   return (
@@ -66,15 +98,24 @@ export default async function AdminSetupPage() {
 
         <div className="space-y-6">
           <section className="card p-6">
+            <h2 className="text-xl">Database backup</h2>
+            <p className="mt-1 text-sm text-muted">
+              Downloads a complete, consistent copy of <code>orders.db</code> (orders, free requests, messages). Take one before every deployment and regularly — your host&apos;s
+              backups may not include the private storage folder.
+            </p>
+            <a href="/api/admin/backup" className="btn-outline mt-4 px-4 py-2 text-sm">Download database backup</a>
+          </section>
+
+          <section className="card p-6">
             <h2 className="text-xl">Private book PDFs</h2>
             <p className="mt-1 text-sm text-muted">
-              Place each PDF in <code>storage/books/</code> on the server with the file name shown. These files are never publicly accessible.
+              Place each PDF in <code>{PRIVATE_BOOKS_DIR}</code> on the server with the file name shown. These files are never publicly accessible.
             </p>
             <ul className="mt-4 space-y-2 text-sm">
               {pdfs.map((p) => (
                 <li key={p.slug} className="flex items-center justify-between gap-3">
                   <code className="text-xs break-all">{p.slug}.pdf</code>
-                  <span className={p.ok ? "text-emerald-700" : "text-amber-700"}>{p.ok ? "Found" : "Missing"}</span>
+                  <span className={p.ok ? "text-emerald-700" : "text-amber-700"}>{p.ok ? "Found" : "Missing or unreadable — can’t be ordered"}</span>
                 </li>
               ))}
             </ul>

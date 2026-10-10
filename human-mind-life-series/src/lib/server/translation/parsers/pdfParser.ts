@@ -149,6 +149,25 @@ export class PdfParser implements BookParser {
   }
 }
 
+/**
+ * True when the PDF has selectable text. A scanned / image-only PDF has (almost) none, and
+ * translating it would only produce an untranslated copy, so it must be OCR'd first.
+ */
+export async function hasTextLayer(filePath: string, minCharsPerPage = 10): Promise<boolean> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(filePath)), useSystemFonts: false, disableFontFace: true, verbosity: 0 });
+  const doc = await task.promise;
+  let chars = 0;
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    for (const it of (await page.getTextContent()).items) if ("str" in it) chars += it.str.trim().length;
+    page.cleanup();
+  }
+  const pages = doc.numPages;
+  await task.destroy();
+  return chars >= pages * minCharsPerPage;
+}
+
 function round(n: number) {
   return Math.round(n * 2) / 2;
 }

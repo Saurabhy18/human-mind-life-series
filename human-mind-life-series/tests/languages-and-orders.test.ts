@@ -69,25 +69,25 @@ describe("POST /api/orders (gateway JSON)", () => {
     const res = await POST(jsonReq("/api/orders", { ...valid, amount: 1, price: 1, paymentStatus: "PAID" }));
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body).toMatchObject({ success: true, amount: 299, currency: "INR", paymentRequired: true });
+    expect(body).toMatchObject({ success: true, packageId: "individual", amount: 299, currency: "INR", paymentRequired: true });
     expect(body.orderId).toMatch(/^HM-[A-Z0-9]{8}$/);
     expect(body.accessToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const { getOrderByRef } = await import("@/lib/server/orders");
     const o = getOrderByRef(body.orderId)!;
-    expect(o).toMatchObject({ payment_status: "PENDING", fulfillment_status: "NOT_STARTED", target_language: "fr", source_language: "en", amount: 299 });
+    expect(o).toMatchObject({ payment_status: "PENDING", fulfillment_status: "NOT_STARTED", target_language: "fr", source_language: "en", amount: 299, package_type: "individual" });
   });
 
   it("rejects unsupported languages", async () => {
     const { POST } = await import("@/app/api/orders/route");
     const res = await POST(jsonReq("/api/orders", { ...valid, targetLanguage: "xx" }));
     expect(res.status).toBe(422);
-    expect((await res.json()).errors.targetLanguage).toBeTruthy();
+    expect((await res.json()).errors.languages).toBeTruthy();
   });
 
-  it("only allows English for books without a source PDF", async () => {
+  it("books without a PDF on the server cannot be ordered, in any language", async () => {
     const { POST } = await import("@/app/api/orders/route");
     expect((await POST(jsonReq("/api/orders", { ...valid, bookId: "the-psychology-of-human-behavior" }))).status).toBe(422);
-    expect((await POST(jsonReq("/api/orders", { ...valid, bookId: "the-psychology-of-human-behavior", targetLanguage: "en" }))).status).toBe(200);
+    expect((await POST(jsonReq("/api/orders", { ...valid, bookId: "the-psychology-of-human-behavior", targetLanguage: "en" }))).status).toBe(422);
   });
 
   it("rejects free books, unknown books, missing consent and cross-site requests", async () => {

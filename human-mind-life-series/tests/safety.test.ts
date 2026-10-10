@@ -47,4 +47,12 @@ describe("Development / test safety", () => {
     const { env } = await loadWith({ NODE_ENV: "production", RAZORPAY_API_BASE: "https://evil.example" });
     expect(env.ENV.payment.razorpayApiBase).toBe("https://api.razorpay.com");
   });
+
+  it("on Hostinger, private data is stored outside the folder that every deployment replaces", async () => {
+    const { defaultStorageDir } = await import("@/lib/server/db");
+    const path = await import("node:path");
+    expect(defaultStorageDir("/home/u123/domains/books.com/hbuilds/current/nodejs")).toBe(path.join("/home/u123/domains/books.com", "storage"));
+    expect(defaultStorageDir("/home/u123/domains/books.com/hbuilds/versions/abc/nodejs")).toBe(path.join("/home/u123/domains/books.com", "storage"));
+    expect(defaultStorageDir("/srv/app")).toBe(path.join("/srv/app", "storage"));
+  });
 });

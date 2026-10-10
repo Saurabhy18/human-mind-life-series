@@ -10,7 +10,7 @@ beforeAll(async () => {
 async function translatedBytes(orderId: number) {
   const { getDb } = await import("@/lib/server/db");
   const { getStorage } = await import("@/lib/server/storageService");
-  const tb = getDb().prepare("SELECT tb.storage_key FROM orders o JOIN translated_books tb ON tb.id = o.translated_book_id WHERE o.id = ?").get(orderId) as { storage_key: string };
+  const tb = getDb().prepare("SELECT tb.storage_key FROM order_items i JOIN translated_books tb ON tb.id = i.translated_book_id WHERE i.order_id = ?").get(orderId) as { storage_key: string };
   return getStorage().get(tb.storage_key);
 }
 
@@ -40,6 +40,8 @@ describe("Translation pipeline (text strategy, fake translator)", () => {
     ["ja", "翻訳"],
     ["zh-CN", "翻译"],
     ["hi", "अनुवाद"],
+    // PDF text extraction returns Tamil prefix vowel signs in visual order (ெமா for மொ), so match the script, not the exact string.
+    ["ta", /\[ta[\u0B80-\u0BFF]+\]/],
   ] as const) {
     it(`English → ${lang}: paid order is translated, stored privately and marked ready`, async () => {
       const o = await createOrder("volume-4", lang);
@@ -47,14 +49,15 @@ describe("Translation pipeline (text strategy, fake translator)", () => {
       await drainWorker();
       const order = o.get();
       expect(order.fulfillment_status).toBe("COMPLETED");
-      expect(order.access_expires_at).toBeTruthy();
+      expect(o.item().access_expires_at).toBeTruthy();
 
       const bytes = await translatedBytes(order.id);
       const { pages } = await pdfText(bytes);
       expect(pages[0].trim()).toBe(""); // original image-only cover copied unchanged
       const all = pages.join(" ");
       // Translated text (whitespace ignored: PDF text extraction splits shaped Indic clusters with spaces).
-      expect(all.replace(/\s+/g, "")).toContain(marker.replace(/\s+/g, ""));
+      if (typeof marker === "string") expect(all.replace(/\s+/g, "")).toContain(marker.replace(/\s+/g, ""));
+      else expect(all.replace(/\s+/g, "")).toMatch(marker);
       expect(all).toContain("Chapter 1"); // structure preserved (heading text carried through)
       expect(all).not.toContain("Test Author | Test Book"); // running header removed and regenerated
     });
@@ -98,14 +101,14 @@ describe("Caching, deduplication and versioning", () => {
     expect(second.get().fulfillment_status).toBe("COMPLETED");
     expect(svc.calls.text).toBe(callsAfterFirst);
     expect(svc.calls.chars).toBe(charsAfterFirst);
-    expect(second.get().translated_book_id).toBe(first.get().translated_book_id);
+    expect(second.item().translated_book_id).toBe(first.item().translated_book_id);
   });
 
   it("many orders queued at once share one job", async () => {
     const { getDb } = await import("@/lib/server/db");
     const orders = await Promise.all([1, 2, 3, 4, 5].map(() => createOrder("volume-4", "ta")));
-    const key = orders[0].get().cache_key;
-    expect(new Set(orders.map((o) => o.get().cache_key)).size).toBe(1);
+    const key = orders[0].item().cache_key;
+    expect(new Set(orders.map((o) => o.item().cache_key)).size).toBe(1);
     expect((getDb().prepare("SELECT COUNT(*) n FROM translation_jobs WHERE cache_key = ?").get(key) as { n: number }).n).toBe(1);
     await drainWorker();
     for (const o of orders) expect(o.get().fulfillment_status).toBe("COMPLETED");
@@ -114,11 +117,11 @@ describe("Caching, deduplication and versioning", () => {
   it("a changed source book gets a new version and a fresh translation", async () => {
     const before = await createOrder("volume-4", "fr");
     await drainWorker();
-    const oldKey = before.get().cache_key!;
+    const oldKey = before.item().cache_key!;
     await writeSourceBook("volume-4", { marker: "Revised" });
     const after = await createOrder("volume-4", "fr");
-    expect(after.get().cache_key).not.toBe(oldKey);
-    expect(after.get().cache_key).toMatch(/^volume-4:en:fr:v-[0-9a-f]{12}$/);
+    expect(after.item().cache_key).not.toBe(oldKey);
+    expect(after.item().cache_key).toMatch(/^volume-4:en:fr:v-[0-9a-f]{12}$/);
     await drainWorker();
     const { pages } = await pdfText(await translatedBytes(after.id));
     expect(pages.join(" ")).toContain("Revised");
@@ -132,7 +135,7 @@ describe("Retries and failures", () => {
     svc.failNext = 999; // Google is "down"
     const o = await createOrder("volume-4", "ar");
     await drainWorker();
-    const job = getDb().prepare("SELECT * FROM translation_jobs WHERE cache_key = ?").get(o.get().cache_key) as { id: number; status: string; attempts: number; last_error: string };
+    const job = getDb().prepare("SELECT * FROM translation_jobs WHERE cache_key = ?").get(o.item().cache_key) as { id: number; status: string; attempts: number; last_error: string };
     expect(job.status).toBe("FAILED");
     expect(job.attempts).toBe(3);
     expect(job.last_error).toContain("Simulated Google outage");
@@ -140,8 +143,8 @@ describe("Retries and failures", () => {
 
     // Customer sees a friendly message, never the internal error.
     const { customerStatus } = await import("@/lib/server/fulfillment");
-    expect(customerStatus(o.get())).toMatchObject({ stage: "FAILED" });
-    expect(JSON.stringify(customerStatus(o.get()))).not.toContain("Simulated");
+    expect(await customerStatus(o.get())).toMatchObject({ stage: "FAILED" });
+    expect(JSON.stringify(await customerStatus(o.get()))).not.toContain("Simulated");
 
     svc.failNext = 0;
     const { retryTranslation } = await import("@/lib/server/fulfillment");
@@ -158,11 +161,38 @@ describe("Retries and failures", () => {
     expect(o.get().fulfillment_status).toBe("COMPLETED");
   });
 
+  it("a scanned (image-only) source PDF fails at once with a clear admin message, and is redelivered after OCR", async () => {
+    const { PDFDocument, rgb } = await import("pdf-lib");
+    const { STORAGE } = await import("./support/helpers");
+    const scanned = await PDFDocument.create();
+    for (let i = 0; i < 3; i++) scanned.addPage([432, 649]).drawRectangle({ x: 40, y: 40, width: 300, height: 500, color: rgb(0.8, 0.8, 0.8) });
+    fs.writeFileSync(`${STORAGE()}/books/why-people-do-what-they-do.pdf`, await scanned.save());
+    const svc = await fake();
+    const before = { ...svc.calls };
+    const o = await createOrder("why-people-do-what-they-do", "fr");
+    await drainWorker();
+    const { getDb } = await import("@/lib/server/db");
+    const job = getDb().prepare("SELECT status, attempts, last_error FROM translation_jobs WHERE cache_key = ?").get(o.item().cache_key) as { status: string; attempts: number; last_error: string };
+    expect(job).toMatchObject({ status: "FAILED", attempts: 1 }); // not retried: retrying cannot help
+    expect(job.last_error).toContain("no selectable text");
+    expect(svc.calls).toEqual(before); // nothing was sent to the translator
+    expect(o.item().fulfillment_status).toBe("FAILED");
+
+    // The admin uploads an OCR'd (text) PDF and clicks "Retry automatic delivery": the new file is used.
+    await writeSourceBook("why-people-do-what-they-do");
+    const { startFulfillment } = await import("@/lib/server/fulfillment");
+    await startFulfillment(o.id, { retryFailed: true });
+    await drainWorker();
+    expect(o.item().fulfillment_status).toBe("COMPLETED");
+    expect(o.get().fulfillment_status).toBe("COMPLETED");
+  });
+
   it("books without a source PDF stay with manual delivery (no job)", async () => {
     const o = await createOrder("the-psychology-of-human-behavior", "en");
-    expect(o.get()).toMatchObject({ payment_status: "PAID", fulfillment_status: "NOT_STARTED", cache_key: null });
+    expect(o.get()).toMatchObject({ payment_status: "PAID", fulfillment_status: "NOT_STARTED" });
+    expect(o.item().cache_key).toBeNull();
     const { customerStatus } = await import("@/lib/server/fulfillment");
-    expect(customerStatus(o.get()).stage).toBe("MANUAL_DELIVERY");
+    expect((await customerStatus(o.get())).stage).toBe("MANUAL_DELIVERY");
   });
 });
 

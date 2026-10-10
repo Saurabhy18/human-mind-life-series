@@ -99,7 +99,7 @@ describe("GET /api/orders/:id/download", () => {
     const o = await createOrder("volume-4", "fr");
     await drainWorker();
     const { getDb } = await import("@/lib/server/db");
-    getDb().prepare("UPDATE orders SET access_expires_at = datetime('now', '-1 minute') WHERE id = ?").run(o.id);
+    getDb().prepare("UPDATE order_items SET access_expires_at = datetime('now', '-1 minute') WHERE order_id = ?").run(o.id);
     const r = await download(o.ref, o.token);
     expect(r.status).toBe(410);
     expect(r.body.code).toBe("EXPIRED");

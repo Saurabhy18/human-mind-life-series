@@ -2,12 +2,17 @@ import "server-only";
 import crypto from "node:crypto";
 import { getDb } from "./db";
 import type { OrderStatus } from "@/lib/order-status";
+import type { PackageId } from "@/config/packages";
 import { getProduct } from "@/lib/products";
 
 export type Order = {
   id: number;
   ref: string;
+  /** individual / three_book_bundle / five_book_bundle — the books themselves are in order_items. */
+  package_type: PackageId;
+  /** The book's slug for an individual order, the package id for a bundle. */
   product_slug: string;
+  /** e.g. "Volume 4 — Intimacy After 50", or "3 Book Bundle — Volumes 1, 3, 5". */
   product_title: string;
   /** Price of the product at the time of the order (from the server catalogue). */
   amount: number;
@@ -31,6 +36,7 @@ export type Order = {
   delivered_at: string | null;
   // Multilingual delivery
   source_language: string;
+  /** Language of the first ebook (each ebook's own language is in order_items). */
   target_language: string;
   currency: string;
   customer_id: number | null;
@@ -38,7 +44,9 @@ export type Order = {
   payment_provider: string;
   provider_order_id: string | null;
   paid_at: string | null;
+  /** Summary of the order's ebooks (see refreshOrderFulfillment). */
   fulfillment_status: FulfillmentStatus;
+  // The next four are kept for orders placed before packages; order_items holds them per ebook now.
   cache_key: string | null;
   translated_book_id: number | null;
   access_expires_at: string | null;
@@ -50,12 +58,53 @@ export type Order = {
 export type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED";
 export type FulfillmentStatus = "NOT_STARTED" | "PROCESSING" | "COMPLETED" | "FAILED";
 
+/** One ebook in an order, in the language the customer chose for it. */
+export type OrderItem = {
+  id: number;
+  order_id: number;
+  position: number;
+  book_slug: string;
+  book_title: string;
+  author: string | null;
+  source_language: string;
+  target_language: string;
+  fulfillment_status: FulfillmentStatus;
+  /** Translation cache key (book + source + target + source version) once delivery has started. */
+  cache_key: string | null;
+  /** The delivered PDF (translated_books row). */
+  translated_book_id: number | null;
+  download_count: number;
+  access_expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NewOrderItem = Pick<OrderItem, "book_slug" | "book_title" | "author" | "source_language" | "target_language">;
+
 /** Finds an order by its public reference (e.g. HM-7KQ2M9XA). */
 export function getOrderByRef(ref: string): Order | undefined {
   return getDb().prepare("SELECT * FROM orders WHERE ref = ?").get(ref) as Order | undefined;
 }
 
-/** Author(s) of the ordered book. Falls back to the catalogue for orders saved before this was stored. */
+export function getOrderItems(orderId: number): OrderItem[] {
+  return getDb().prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id").all(orderId) as OrderItem[];
+}
+
+/** The ebooks of many orders in one query (admin lists and exports). */
+export function itemsForOrders(orderIds: number[]): Map<number, OrderItem[]> {
+  const out = new Map<number, OrderItem[]>();
+  if (!orderIds.length) return out;
+  const rows = getDb().prepare("SELECT * FROM order_items WHERE order_id IN (SELECT value FROM json_each(?)) ORDER BY order_id, position, id").all(JSON.stringify(orderIds)) as OrderItem[];
+  for (const r of rows) out.set(r.order_id, [...(out.get(r.order_id) ?? []), r]);
+  return out;
+}
+
+/** An item only if it belongs to this order (so one order's token can never reach another order's book). */
+export function getOrderItem(orderId: number, itemId: number): OrderItem | undefined {
+  return getDb().prepare("SELECT * FROM order_items WHERE id = ? AND order_id = ?").get(itemId, orderId) as OrderItem | undefined;
+}
+
+/** Author(s) of the ordered book(s). Falls back to the catalogue for orders saved before this was stored. */
 export function orderAuthor(o: Pick<Order, "author" | "product_slug">): string {
   return o.author ?? getProduct(o.product_slug)?.author ?? "";
 }
@@ -107,7 +156,14 @@ export type NewOrder = Pick<
   | "target_language"
   | "currency"
   | "payment_provider"
-> & { customer_id?: number | null; provider_order_id?: string | null };
+> & {
+  customer_id?: number | null;
+  provider_order_id?: string | null;
+  /** Defaults to "individual". */
+  package_type?: PackageId;
+  /** The ebooks and their languages. Defaults to the single book in product_slug / target_language. */
+  items?: NewOrderItem[];
+};
 
 /** Creates or updates the customer record for an email address (one row per customer). */
 export function upsertCustomer(c: { email: string; name: string; whatsapp?: string | null }): number {
@@ -123,15 +179,24 @@ export function utrExists(utr: string): boolean {
   return !!getDb().prepare("SELECT 1 FROM orders WHERE utr = ? COLLATE NOCASE").get(utr);
 }
 
+/** Creates the order and its ebooks in one transaction (an order never exists without its items). */
 export function createOrder(data: NewOrder): { id: number; ref: string } {
   const db = getDb();
+  const { items: givenItems, ...order } = data;
+  const items: NewOrderItem[] = givenItems?.length
+    ? givenItems
+    : [{ book_slug: data.product_slug, book_title: data.product_title, author: data.author, source_language: data.source_language, target_language: data.target_language }];
   const insert = db.prepare(`
-    INSERT INTO orders (ref, product_slug, product_title, amount, amount_paid, author, buyer_name, email, whatsapp, utr,
+    INSERT INTO orders (ref, package_type, product_slug, product_title, amount, amount_paid, author, buyer_name, email, whatsapp, utr,
                         screenshot_file, screenshot_mime, utm_json, ip_hash, user_agent,
                         source_language, target_language, currency, payment_provider, customer_id, provider_order_id)
-    VALUES (@ref, @product_slug, @product_title, @amount, @amount_paid, @author, @buyer_name, @email, @whatsapp, @utr,
+    VALUES (@ref, @package_type, @product_slug, @product_title, @amount, @amount_paid, @author, @buyer_name, @email, @whatsapp, @utr,
             @screenshot_file, @screenshot_mime, @utm_json, @ip_hash, @user_agent,
             @source_language, @target_language, @currency, @payment_provider, @customer_id, @provider_order_id)
+  `);
+  const insertItem = db.prepare(`
+    INSERT INTO order_items (order_id, position, book_slug, book_title, author, source_language, target_language)
+    VALUES (@order_id, @position, @book_slug, @book_title, @author, @source_language, @target_language)
   `);
   const event = db.prepare("INSERT INTO order_events (order_id, status, note) VALUES (?, 'pending', 'Payment details submitted by customer')");
 
@@ -140,8 +205,9 @@ export function createOrder(data: NewOrder): { id: number; ref: string } {
     for (let attempt = 0; attempt < 5; attempt++) {
       const ref = generateOrderRef();
       try {
-        const res = insert.run({ customer_id: null, provider_order_id: null, ...data, ref });
+        const res = insert.run({ customer_id: null, provider_order_id: null, package_type: "individual", ...order, ref });
         const id = Number(res.lastInsertRowid);
+        items.forEach((item, position) => insertItem.run({ ...item, author: item.author ?? null, order_id: id, position }));
         event.run(id);
         return { id, ref };
       } catch (err) {

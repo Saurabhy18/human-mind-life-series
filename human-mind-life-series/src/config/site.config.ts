@@ -18,8 +18,12 @@ export const CONFIG = {
   // ---------------------------------------------------------------- Brand --
   SITE_NAME: "The Human Mind & Life Series",
   SERIES_NAME: "The Human Mind & Life Series",
-  /** Your live domain, WITHOUT a trailing slash. Used for SEO, sitemap & sharing. */
-  SITE_URL: "https://www.example.com",
+  /**
+   * Your live domain. Set NEXT_PUBLIC_SITE_URL=https://YOUR-DOMAIN.com in the
+   * server's environment (read at build time). Used for SEO, canonical URLs,
+   * the sitemap, sharing images and email links.
+   */
+  SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || "https://www.example.com",
   /**
    * The person or business that sells the books (shown in the copyright line
    * and the legal pages). Replace with your legal / business name if you wish.
@@ -66,24 +70,15 @@ export const CONFIG = {
   ENABLE_UPI_APP_BUTTON: false,
 
   // --------------------------------------------------------------- Prices --
-  /** Prices in Indian Rupees (whole numbers). REPLACE with your real prices. */
-  BOOK_1_PRICE: 299,
-  BOOK_2_PRICE: 299,
-  BOOK_3_PRICE: 299,
-  BOOK_4_PRICE: 299,
-  BOOK_5_PRICE: 299,
   /**
+   * Paid-book prices and bundles (Individual Ebook ₹299, shown as ₹599 → 50% OFF · any 3 books ₹649 ·
+   * all 5 books ₹999) are set in ONE place: src/config/packages.ts.
+   *
    * Volume 6 is FREE. A price of 0 automatically turns a book into a free
    * book: no payment page, no QR code, no UTR. Readers fill in a short
    * "Get Free Book" form instead.
    */
   BOOK_6_PRICE: 0,
-
-  /** Complete-series offer. Set enabled: true and a price to start selling it. */
-  SERIES_BUNDLE: {
-    enabled: false,
-    price: 999,
-  },
 
   // --------------------------------------------------------------- Covers --
   /**
@@ -119,10 +114,11 @@ export const CONFIG = {
   FREE_DOWNLOAD_LIMIT: 3,
 
   // ------------------------------------------------------ Ads & Analytics --
+  // The three IDs below can also be set as environment variables (NEXT_PUBLIC_…), read at build time.
   /** Google Analytics 4 Measurement ID, e.g. "G-ABC123XYZ". "" = off. */
-  GOOGLE_ANALYTICS_ID: "",
+  GOOGLE_ANALYTICS_ID: process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID || "",
   /** Google Ads tag ID, e.g. "AW-123456789". "" = off. */
-  GOOGLE_ADS_ID: "",
+  GOOGLE_ADS_ID: process.env.NEXT_PUBLIC_GOOGLE_ADS_ID || "",
   /**
    * Google Ads conversion label for "payment details submitted", e.g.
    * "AbC-D_efG-h12_34-567". Found in Google Ads → Goals → Conversions.
@@ -131,7 +127,7 @@ export const CONFIG = {
   /** Optional separate Google Ads conversion label for free-book requests. */
   GOOGLE_ADS_FREE_BOOK_CONVERSION_LABEL: "",
   /** Meta (Facebook/Instagram) Pixel ID, e.g. "1234567890123456". "" = off. */
-  META_PIXEL_ID: "",
+  META_PIXEL_ID: process.env.NEXT_PUBLIC_META_PIXEL_ID || "",
   /**
    * Payments are verified manually, so a submission is tracked as a LEAD by
    * default. Set true only if you also want submissions reported to Google /
@@ -158,5 +154,13 @@ export function shouldShow(value: string): boolean {
   return !isPlaceholder(value) || process.env.NODE_ENV !== "production";
 }
 
-export const SITE_URL = CONFIG.SITE_URL.replace(/\/$/, "");
+/** "your-domain.com/" → "https://your-domain.com" (no trailing slash; https added if missing). */
+function normalizeSiteUrl(raw: string): string {
+  const v = raw.trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
+export const SITE_URL = normalizeSiteUrl(CONFIG.SITE_URL);
+/** True while the live domain hasn't been set (example.com default or the YOUR-DOMAIN.com placeholder). */
+export const SITE_URL_IS_PLACEHOLDER = /example\.com|your-domain/i.test(SITE_URL);
 export const BUSINESS_EMAIL = CONFIG.BUSINESS_EMAIL || CONFIG.AUTHOR_EMAIL;

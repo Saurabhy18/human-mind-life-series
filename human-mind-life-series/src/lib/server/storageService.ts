@@ -25,7 +25,7 @@ function checkKey(key: string) {
   if (!SAFE_KEY.test(key) || key.includes("..")) throw new Error("Invalid storage key");
 }
 
-export const FILES_DIR = path.join(STORAGE_DIR, "files");
+export const FILES_DIR = path.join(/*turbopackIgnore: true*/ STORAGE_DIR, "files");
 
 function sign(payload: string): string {
   const secret = ENV.download.signingSecret;
@@ -50,7 +50,7 @@ export function verifyLocalSignature(params: URLSearchParams, key: string): { ok
 class LocalStorage implements StorageService {
   private file(key: string) {
     checkKey(key);
-    return path.join(FILES_DIR, ...key.split("/"));
+    return path.join(/*turbopackIgnore: true*/ FILES_DIR, ...key.split("/"));
   }
   async put(key: string, data: Uint8Array) {
     const f = this.file(key);
@@ -87,7 +87,8 @@ class GcsStorage implements StorageService {
   private bucketPromise: Promise<GcsBucket> | null = null;
   private bucket() {
     if (!this.bucketPromise) {
-      this.bucketPromise = (import(/* webpackIgnore: true */ "@google-cloud/storage" as string) as Promise<{ Storage: new () => { bucket(name: string): GcsBucket } }>).then(
+      // A plain import so the build includes the SDK in standalone output.
+      this.bucketPromise = (import("@google-cloud/storage") as unknown as Promise<{ Storage: new () => { bucket(name: string): GcsBucket } }>).then(
         ({ Storage }) => new Storage().bucket(ENV.storage.bucket),
       );
     }

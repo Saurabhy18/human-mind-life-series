@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 /** Creates an order the way the UPI flow does, then confirms payment server-side (as the admin would). */
 export async function createOrder(slug: string, lang: string, opts: { pay?: boolean } = {}) {
-  const { createOrder: create, getOrder } = await import("@/lib/server/orders");
+  const { createOrder: create, getOrder, getOrderItems } = await import("@/lib/server/orders");
   const { issueAccessToken, markOrderPaid } = await import("@/lib/server/fulfillment");
   const { getProduct } = await import("@/lib/products");
   const p = getProduct(slug)!;
@@ -30,7 +30,8 @@ export async function createOrder(slug: string, lang: string, opts: { pay?: bool
   if (opts.pay !== false) {
     await markOrderPaid({ orderId: id, provider: "manual_upi", idempotencyKey: `manual_upi:order:${id}`, amount: p.price, currency: "INR" });
   }
-  return { id, ref, token, get: () => getOrder(id)! };
+  // `item()` is the order's one ebook (its language, delivery state, file and downloads).
+  return { id, ref, token, get: () => getOrder(id)!, item: () => getOrderItems(id)[0] };
 }
 
 /** Runs the background worker until there is nothing left to do (retries made due immediately). */

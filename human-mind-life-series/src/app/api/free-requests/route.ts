@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   if (!book) return fail(422, "This book is not available as a free book.");
 
   // A personal download link is only issued when instant delivery is switched on AND the private PDF exists.
-  const pdfExists = fs.existsSync(path.join(PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
+  const pdfExists = fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
   const instant = CONFIG.FREE_BOOK_INSTANT_DOWNLOAD && pdfExists;
 
   let tracking: Record<string, string> | null = null;

@@ -28,7 +28,13 @@ const projectId = str("GOOGLE_CLOUD_PROJECT_ID");
 
 export type TranslationProvider = "google" | "fake" | "none";
 export type TranslationStrategy = "document" | "text";
-export type PaymentProvider = "manual_upi" | "razorpay";
+/** none = checkout closed (no payments taken). razorpay = gateway checkout. manual_upi = the older UPI QR + admin verification flow (opt-in only). */
+export type PaymentProvider = "none" | "manual_upi" | "razorpay";
+
+function paymentProvider(): PaymentProvider {
+  const v = str("PAYMENT_PROVIDER", "none");
+  return v === "razorpay" || v === "manual_upi" ? v : "none";
+}
 
 function translationProvider(): TranslationProvider {
   const v = str("TRANSLATION_PROVIDER", projectId ? "google" : "none");
@@ -59,11 +65,17 @@ export const ENV = {
     pricePerMillionCharsUsd: Number(str("TRANSLATION_PRICE_PER_MILLION_CHARS_USD", "20")),
     pricePerPageUsd: Number(str("DOCUMENT_TRANSLATION_PRICE_PER_PAGE_USD", "0.08")),
     chromiumPath: str("CHROMIUM_PATH"),
+    /**
+     * Translated editions are offered to customers ONLY when this is true. Set it after Google is configured
+     * AND a real translation has been produced, checked and downloaded end to end. Until then: English only.
+     */
+    salesEnabled: bool("TRANSLATION_SALES_ENABLED", false),
   },
 
   // ------------------------------------------------------------- Payments --
   payment: {
-    provider: (str("PAYMENT_PROVIDER", "manual_upi") === "razorpay" ? "razorpay" : "manual_upi") as PaymentProvider,
+    // Default "none": the site takes no payments until a provider is deliberately configured.
+    provider: paymentProvider(),
     razorpayKeyId: str("RAZORPAY_KEY_ID"),
     razorpayKeySecret: str("RAZORPAY_KEY_SECRET"),
     razorpayWebhookSecret: str("RAZORPAY_WEBHOOK_SECRET"),
@@ -105,4 +117,9 @@ export const ENV = {
 
 export function translationEnabled(): boolean {
   return ENV.translation.provider !== "none";
+}
+
+/** Translated editions are sold only when a translator is configured AND the owner has switched sales on (TRANSLATION_SALES_ENABLED). */
+export function translationOffered(): boolean {
+  return translationEnabled() && ENV.translation.salesEnabled;
 }

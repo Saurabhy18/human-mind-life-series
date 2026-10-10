@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { ENV } from "@/config/env.server";
 import { requireAdmin } from "@/lib/server/auth";
-import { listCustomers, listJobs, recentDownloads, recentPayments, translationMetrics } from "@/lib/server/adminReports";
+import { listCustomers, listJobs, recentDownloads, recentPayments, translationMatrix, translationMetrics, type TranslationCell } from "@/lib/server/adminReports";
 import { getBookSource } from "@/lib/server/translation/bookSource";
-import { PAID_BOOKS, formatINR } from "@/lib/products";
+import { FEATURED_LANGUAGES } from "@/config/languages";
+import { PAID_BOOKS, formatINR, type Book } from "@/lib/products";
 import { formatDate } from "@/components/admin/StatusBadge";
 import { retryTranslationAction } from "../../actions";
 
@@ -23,6 +24,10 @@ export default async function AdminTranslationsPage() {
   const payments = recentPayments(20);
   const downloads = recentDownloads(20);
   const customers = listCustomers(20);
+  const matrix = translationMatrix((slug) => getBookSource(slug)?.version ?? null);
+  const featured = new Set(FEATURED_LANGUAGES.map((l) => l.code));
+  const extra = [...new Set([...matrix.values()].flatMap((m) => [...m.keys()]))].filter((c) => !featured.has(c)).sort();
+  const columns = [...FEATURED_LANGUAGES, ...extra.map((code) => ({ code, name: code }))];
 
   return (
     <>
@@ -31,6 +36,12 @@ export default async function AdminTranslationsPage() {
         Provider: <strong>{ENV.translation.provider}</strong> · Strategy: <strong>{ENV.translation.strategy}</strong> · Payments: <strong>{ENV.payment.provider}</strong> · Storage:{" "}
         <strong>{ENV.storage.driver}</strong>. Each book + language is translated once and reused for every later order.
       </p>
+      {ENV.translation.provider !== "none" && !ENV.translation.salesEnabled && (
+        <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+          Translated editions are <strong>not offered to customers</strong> (English only). After a real translation has been produced and checked
+          end to end, set <code>TRANSLATION_SALES_ENABLED=true</code> on the server and rebuild.
+        </p>
+      )}
       {ENV.translation.provider === "none" && (
         <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
           Translation is not configured, so books are sold in English only. Set <code>GOOGLE_CLOUD_PROJECT_ID</code> and Google credentials (see README → Google Cloud setup).
@@ -46,8 +57,39 @@ export default async function AdminTranslationsPage() {
         <Stat label="Avg. time" value={totals.avg_ms ? `${Math.round(totals.avg_ms / 1000)} s` : "—"} />
       </section>
       <p className="mt-2 text-xs text-muted">
-        {reuse.paid_translated} paid translated order(s) served by {totals.completed ?? 0} translation(s). Cost is an estimate from Google&apos;s list prices (${ENV.translation.pricePerMillionCharsUsd}/M chars, ${ENV.translation.pricePerPageUsd}/page) — check your Google Cloud billing for actual charges.
+        {reuse.paid_translated} paid translated ebook(s) served by {totals.completed ?? 0} translation(s). Cost is an estimate from Google&apos;s list prices (${ENV.translation.pricePerMillionCharsUsd}/M chars, ${ENV.translation.pricePerPageUsd}/page) — check your Google Cloud billing for actual charges.
       </p>
+
+      <section className="card mt-8 overflow-x-auto">
+        <h2 className="p-6 pb-0 text-xl">Ebook languages</h2>
+        <p className="px-6 pt-1 text-xs text-muted">
+          <span className="text-emerald-700">✓</span> available (click to download) · <span className="text-amber-700">⏳</span> queued / processing ·{" "}
+          <span className="text-red-700">✕</span> failed · <span>·</span> not generated yet — made automatically the first time someone buys it. Hover a code for the language name.
+        </p>
+        <table className="mt-4 w-full text-center text-xs">
+          <thead className="border-y border-line bg-paper text-muted">
+            <tr>
+              <th className="sticky left-0 bg-paper px-4 py-2 text-left uppercase">Book</th>
+              {columns.map((c) => (
+                <th key={c.code} title={c.name} className="px-2 py-2 font-mono font-normal">{c.code}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {PAID_BOOKS.map((b) => (
+              <tr key={b.slug}>
+                <th scope="row" className="sticky left-0 bg-white px-4 py-2 text-left font-medium whitespace-nowrap">{b.volumeLabel ?? b.title}</th>
+                {columns.map((c) => (
+                  <td key={c.code} className="px-2 py-2">
+                    <MatrixCell book={b} code={c.code} name={c.name} hasSource={!!getBookSource(b)} cell={matrix.get(b.slug)?.get(c.code)} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="p-6 pt-3 text-xs text-muted">A row of “—” means the English source PDF is not on the server yet, so that book is delivered manually in English.</p>
+      </section>
 
       {failed.length > 0 && (
         <section className="card mt-8 border-red-200 p-6">
@@ -187,6 +229,18 @@ function Stat({ label, value, danger }: { label: string; value: React.ReactNode;
       <p className={`mt-1 font-serif text-2xl ${danger ? "text-red-700" : ""}`}>{value}</p>
     </div>
   );
+}
+
+function MatrixCell({ book, code, name, hasSource, cell }: { book: Book; code: string; name: string; hasSource: boolean; cell: TranslationCell | undefined }) {
+  const label = `${book.title} — ${name}`;
+  if (!hasSource) return <span className="text-muted" title={`${label}: no source PDF`}>—</span>;
+  if (cell?.status === "COMPLETED" && cell.translatedBookId) {
+    return <a href={`/api/admin/translations/${cell.translatedBookId}/file`} className="font-semibold text-emerald-700" title={`${label}: available`}>✓</a>;
+  }
+  if (code === book.sourceLanguage) return <a href={`/api/admin/books/${book.slug}/pdf`} className="font-semibold text-emerald-700" title={`${label}: original`}>✓</a>;
+  if (cell?.status === "QUEUED" || cell?.status === "PROCESSING") return <span className="text-amber-700" title={`${label}: ${cell.status.toLowerCase()} ${cell.progress}%`}>⏳</span>;
+  if (cell?.status === "FAILED") return <span className="text-red-700" title={`${label}: failed — see Failed jobs`}>✕</span>;
+  return <span className="text-line" title={`${label}: not generated yet`}>·</span>;
 }
 
 function RetryButton({ jobId }: { jobId: number }) {

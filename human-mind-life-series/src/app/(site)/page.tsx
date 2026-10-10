@@ -3,11 +3,16 @@ import type { Metadata } from "next";
 import { CONFIG, SITE_URL } from "@/config/site.config";
 import { SERIES } from "@/content/books";
 import { getGeneralFaqs } from "@/content/faqs";
-import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bundleEnabled, formatINR, formatPrice, individualTotal, volumeRange } from "@/lib/products";
+import { paymentCopy } from "@/content/paymentCopy";
+import { checkoutMode } from "@/lib/server/paymentService";
+import { PACKAGES } from "@/config/packages";
+import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
 import { countWord } from "@/lib/text";
 import { faqSchema, organizationSchema, pageMetadata, seriesSchema } from "@/lib/seo";
 import { BookCard } from "@/components/BookCard";
 import { BookCover } from "@/components/BookCover";
+import { OfferCountdown } from "@/components/OfferCountdown";
+import { BookPrice } from "@/components/BookPrice";
 import { FaqList } from "@/components/FaqList";
 import { JsonLd } from "@/components/JsonLd";
 import { AuthorsGrid } from "@/components/AuthorBlock";
@@ -23,7 +28,9 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function HomePage() {
-  const faqs = getGeneralFaqs().slice(0, 6);
+  const mode = checkoutMode();
+  const pay = paymentCopy(mode);
+  const faqs = getGeneralFaqs(mode).slice(0, 6);
   const [v1, v2, v3, v4, v5] = ALL_BOOKS;
   const freeBook = FREE_BOOKS[0];
   const stats = [
@@ -98,8 +105,8 @@ export default function HomePage() {
           {[
             { Icon: IconBook, text: `${countWord(ALL_BOOKS.length)} volumes, one series` },
             { Icon: IconPhone, text: `${CONFIG.BOOK_FORMAT} for any device` },
-            { Icon: IconQr, text: "Simple UPI QR payment" },
-            { Icon: IconShield, text: "Personally verified delivery" },
+            { Icon: IconQr, text: pay.trustPay },
+            { Icon: IconShield, text: pay.trustDelivery },
           ].map(({ Icon, text }) => (
             <li key={text} className="flex items-center gap-3 text-ink/80">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cream text-gold-dark">
@@ -146,7 +153,8 @@ export default function HomePage() {
             View all books <IconArrowRight width={16} />
           </Link>
         </div>
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <OfferCountdown variant="banner" scope={volumeRange(PAID_BOOKS)} className="mt-10" />
+        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {ALL_BOOKS.slice(0, 3).map((b) => (
             <BookCard key={b.slug} book={b} />
           ))}
@@ -181,7 +189,7 @@ export default function HomePage() {
                     <p className="mt-1 line-clamp-2 text-sm text-muted">{b.tagline}</p>
                   </div>
                   <div className="hidden shrink-0 text-right sm:block">
-                    <p className={`font-serif text-xl ${b.free ? "font-semibold text-success" : ""}`}>{formatPrice(b)}</p>
+                    <p className={`font-serif text-xl ${b.free ? "font-semibold text-success" : ""}`}><BookPrice book={b} size="sm" align="end" /></p>
                     <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-gold-dark group-hover:text-ink">
                       View <IconArrowRight width={14} />
                     </p>
@@ -242,14 +250,22 @@ export default function HomePage() {
           <div className="card flex flex-col items-start justify-between gap-6 border-gold/40 bg-gradient-to-r from-white to-cream p-8 sm:flex-row sm:items-center sm:p-10">
             <div>
               <p className="eyebrow">Complete-Series Offer</p>
-              <h2 className="mt-2 text-3xl">All {PAID_BOOKS.length} paid volumes for {formatINR(CONFIG.SERIES_BUNDLE.price)}</h2>
+              <h2 className="mt-2 text-3xl">All {PAID_BOOKS.length} paid volumes for {formatINR(bundlePrice())}</h2>
               <p className="mt-2 text-muted">
                 Bought individually: <span className="line-through">{formatINR(individualTotal())}</span>
               </p>
+              <p className="mt-1 text-sm text-muted">
+                Or choose any {PACKAGES.three_book_bundle.books} books for <strong className="text-ink">{formatINR(PACKAGES.three_book_bundle.price)}</strong>.
+              </p>
             </div>
-            <Link href={`/checkout/${BUNDLE_SLUG}`} className="btn-gold px-8 py-4 text-base">
-              Buy the Complete Series
-            </Link>
+            <div className="flex w-full flex-col gap-3 sm:w-auto">
+              <Link href={`/checkout/${BUNDLE_SLUG}`} className="btn-gold px-8 py-4 text-base">
+                Buy the Complete Series
+              </Link>
+              <Link href={packageCheckoutHref("three_book_bundle")} className="btn-outline px-8">
+                Choose any {PACKAGES.three_book_bundle.books}
+              </Link>
+            </div>
           </div>
         </section>
       )}
@@ -317,7 +333,7 @@ export default function HomePage() {
           <div className="relative">
             <p className="eyebrow text-gold-light">Begin Today</p>
             <h2 className="mx-auto mt-3 max-w-2xl text-3xl leading-tight text-white sm:text-5xl">Start your journey into the human mind</h2>
-            <p className="mx-auto mt-5 max-w-xl text-lg text-white/70">Choose a volume, pay securely by UPI, and receive your book once your payment is verified.</p>
+            <p className="mx-auto mt-5 max-w-xl text-lg text-white/70">{pay.homeCta}</p>
             <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
               <Link href="/books" className="btn-gold px-8 py-4 text-base">
                 Explore the Books

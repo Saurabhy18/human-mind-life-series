@@ -29,5 +29,5 @@ export async function POST(req: Request) {
   } catch (err) {
     logger.warn("Gateway sync failed (webhook will still confirm)", { orderId: order.id, error: errorMessage(err) });
   }
-  return NextResponse.json({ success: true, ...customerStatus(getOrder(order.id)!) });
+  return NextResponse.json({ success: true, ...(await customerStatus(getOrder(order.id)!)) });
 }

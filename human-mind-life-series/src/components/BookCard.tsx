@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { CONFIG } from "@/config/site.config";
 import { BookCover } from "./BookCover";
-import { bookActionHref, bookActionLabel, formatPrice, type Book } from "@/lib/products";
+import { BookPrice } from "./BookPrice";
+import { bookActionHref, bookActionLabel, type Book } from "@/lib/products";
 
 export function BookCard({ book, headingLevel = "h3" }: { book: Book; headingLevel?: "h2" | "h3" }) {
   const Heading = headingLevel;
@@ -26,7 +27,7 @@ export function BookCard({ book, headingLevel = "h3" }: { book: Book; headingLev
         {book.adultsOnly && <p className="mt-1 text-xs font-medium text-muted">For adult readers (18+)</p>}
         <p className="mt-3 flex-1 text-sm leading-relaxed text-muted">{book.shortDescription}</p>
         <div className="mt-5 flex items-baseline justify-between border-t border-line pt-5">
-          <span className={`font-serif text-2xl ${book.free ? "font-semibold tracking-wide text-success" : ""}`}>{formatPrice(book)}</span>
+          <BookPrice book={book} priceClassName={`font-serif text-2xl ${book.free ? "font-semibold tracking-wide text-success" : ""}`} />
           <span className="text-xs text-muted">{CONFIG.BOOK_FORMAT}</span>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3">

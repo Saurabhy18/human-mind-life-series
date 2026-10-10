@@ -1,15 +1,14 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getProduct } from "@/lib/products";
 import { fieldErrors, orderSchema, sanitizeTracking } from "@/lib/validation";
-import { createOrder, getOrder, upsertCustomer, utrExists } from "@/lib/server/orders";
+import { createOrder, getOrder, upsertCustomer, utrExists, type NewOrder } from "@/lib/server/orders";
 import { deleteScreenshot, MAX_SCREENSHOT_BYTES, saveScreenshot, UploadError } from "@/lib/server/uploads";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp, hashIp, isSameOrigin } from "@/lib/server/request";
-import { validateOrderLanguage } from "@/lib/server/orderLanguage";
+import { parseItemsField, readSelection, validatePurchase, type ValidPurchase } from "@/lib/server/purchase";
 import { issueAccessToken } from "@/lib/server/fulfillment";
-import { gatewayEnabled } from "@/lib/server/paymentService";
+import { checkoutMode, gatewayEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -18,14 +17,33 @@ function fail(status: number, message: string, errors?: Record<string, string>) 
   return NextResponse.json({ ok: false, success: false, message, errors }, { status });
 }
 
+/** The order fields that come from the validated purchase — package, ebooks, languages and the SERVER's price. */
+function purchaseFields(p: ValidPurchase): Pick<NewOrder, "package_type" | "product_slug" | "product_title" | "amount" | "author" | "currency" | "source_language" | "target_language" | "items"> {
+  return {
+    package_type: p.packageId,
+    product_slug: p.productSlug,
+    product_title: p.productTitle,
+    amount: p.amount,
+    author: p.author,
+    currency: p.currency,
+    source_language: p.items[0].source_language,
+    target_language: p.items[0].target_language,
+    items: p.items.map((i) => ({ book_slug: i.book_slug, book_title: i.book_title, author: i.author, source_language: i.source_language, target_language: i.target_language })),
+  };
+}
+
 /**
  * POST /api/orders
  *  - multipart/form-data → UPI QR flow: "Payment completed?" submission (UTR + screenshot), verified by the admin.
  *  - application/json    → payment-gateway flow: creates a PENDING order before checkout (only when a gateway is enabled).
+ * Both take a package and its ebooks with a language each: { packageId, items: [{ bookId, language }] }.
+ * The amount is calculated here from src/config/packages.ts — never taken from the browser.
  * In both cases the order is created UNPAID. Nothing here marks a payment as paid.
  */
 export async function POST(req: Request) {
   if (!isSameOrigin(req.headers)) return fail(403, "Invalid request origin.");
+  // No payment provider configured (the default): no orders, so no payment can be taken.
+  if (checkoutMode() === "closed") return fail(403, "Online checkout is not open yet. No payment can be made on this website at the moment.");
 
   const ip = clientIp(req.headers);
   const limit = rateLimit(`order:${ip}`, 10, 15 * 60 * 1000);
@@ -38,8 +56,11 @@ export async function POST(req: Request) {
 // ------------------------------------------------------------- Gateway flow --
 
 const gatewayOrderSchema = z.object({
-  bookId: z.string().trim().min(1).max(80),
-  targetLanguage: z.string().trim().min(2).max(20),
+  packageId: z.unknown().optional(),
+  items: z.unknown().optional(),
+  // Older single-book form: { bookId, targetLanguage } = an Individual Ebook order.
+  bookId: z.string().trim().max(80).optional(),
+  targetLanguage: z.string().trim().max(20).optional(),
   customerName: z.string().trim().min(2, "Please enter your full name.").max(80).regex(/^[\p{L}\p{M} .'-]+$/u, "Please use letters only in your name."),
   customerEmail: z.string().trim().toLowerCase().max(120).email("Please enter a valid email address."),
   consent: z.literal(true, { message: "Please accept the Terms to continue." }),
@@ -60,19 +81,15 @@ async function createGatewayOrder(req: Request, ip: string) {
   const data = parsed.data;
   if (data.website) return fail(400, "Invalid request.");
 
-  const product = getProduct(data.bookId); // paid products only; price comes from the server
-  if (!product) return fail(422, "This book is not available.", { bookId: "Unknown book." });
-  const lang = await validateOrderLanguage(product.slug, data.targetLanguage);
-  if (!lang.ok) return fail(422, lang.message, { targetLanguage: lang.message });
+  const selection = readSelection(data);
+  const checked = await validatePurchase(selection.packageId, selection.items); // the price comes from the server
+  if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
 
   try {
     const customerId = upsertCustomer({ email: data.customerEmail, name: data.customerName });
     const { id, ref } = createOrder({
-      product_slug: product.slug,
-      product_title: product.label,
-      amount: product.price,
+      ...purchaseFields(checked.purchase),
       amount_paid: null,
-      author: product.author,
       buyer_name: data.customerName,
       email: data.customerEmail,
       whatsapp: "",
@@ -86,9 +103,6 @@ async function createGatewayOrder(req: Request, ip: string) {
       })(),
       ip_hash: hashIp(ip),
       user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
-      source_language: lang.source,
-      target_language: lang.language.code,
-      currency: "INR",
       payment_provider: "razorpay",
       customer_id: customerId,
     });
@@ -98,6 +112,7 @@ async function createGatewayOrder(req: Request, ip: string) {
       success: true,
       ok: true,
       orderId: ref,
+      packageId: order.package_type,
       amount: order.amount,
       currency: order.currency,
       paymentRequired: true,
@@ -130,7 +145,7 @@ async function createUpiOrder(req: Request, ip: string) {
     buyerName: form.get("buyerName") ?? "",
     email: form.get("email") ?? "",
     whatsapp: form.get("whatsapp") ?? "",
-    product: form.get("product") ?? "",
+    product: form.get("product") ?? undefined,
     amountPaid: form.get("amountPaid") ?? "",
     utr: form.get("utr") ?? "",
     consent: form.get("consent") ?? "",
@@ -138,12 +153,15 @@ async function createUpiOrder(req: Request, ip: string) {
   if (!parsed.success) return fail(422, "Please correct the highlighted fields.", fieldErrors(parsed.error));
   const data = parsed.data;
 
-  // The price always comes from the server-side catalogue, never from the browser.
-  const product = getProduct(data.product);
-  if (!product) return fail(422, "Please choose the book you purchased.", { product: "Please choose a valid book." });
-
-  const lang = await validateOrderLanguage(product.slug, form.get("targetLanguage"));
-  if (!lang.ok) return fail(422, lang.message, { targetLanguage: lang.message });
+  // Package, ebooks and languages are validated, and the price is set, on the server — never taken from the browser.
+  const selection = readSelection({
+    packageId: form.get("packageId") ?? undefined,
+    items: parseItemsField(form.get("items")),
+    product: data.product || undefined,
+    targetLanguage: form.get("targetLanguage") ?? undefined,
+  });
+  const checked = await validatePurchase(selection.packageId, selection.items);
+  if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
 
   if (utrExists(data.utr)) {
     return fail(409, "This UTR / Transaction ID has already been submitted.", {
@@ -173,11 +191,8 @@ async function createUpiOrder(req: Request, ip: string) {
   try {
     const customerId = upsertCustomer({ email: data.email, name: data.buyerName, whatsapp: data.whatsapp });
     const { id, ref } = createOrder({
-      product_slug: product.slug,
-      product_title: product.label,
-      amount: product.price,
+      ...purchaseFields(checked.purchase),
       amount_paid: data.amountPaid,
-      author: product.author,
       buyer_name: data.buyerName,
       email: data.email,
       whatsapp: data.whatsapp,
@@ -187,9 +202,6 @@ async function createUpiOrder(req: Request, ip: string) {
       utm_json: tracking ? JSON.stringify(tracking) : null,
       ip_hash: hashIp(ip),
       user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
-      source_language: lang.source,
-      target_language: lang.language.code,
-      currency: "INR",
       payment_provider: "manual_upi",
       customer_id: customerId,
     });

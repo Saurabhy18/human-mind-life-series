@@ -30,7 +30,8 @@ export const orderSchema = z.object({
   buyerName: name,
   email,
   whatsapp,
-  product: z.string().trim().min(1, "Please choose the book you purchased.").max(80),
+  /** Older single-book form only; the checkout now sends packageId + items (validated in lib/server/purchase.ts). */
+  product: z.string().trim().max(80).optional(),
   amountPaid: z
     .string()
     .trim()

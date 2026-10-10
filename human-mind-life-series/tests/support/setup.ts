@@ -15,6 +15,7 @@ Object.assign(process.env, {
   STORAGE_DIR: dir,
   SESSION_SECRET: "test-session-secret-0123456789-abcdefghijklmnopqrstuvwxyz",
   TRANSLATION_PROVIDER: "fake",
+  TRANSLATION_SALES_ENABLED: "true",
   TRANSLATION_STRATEGY: process.env.TEST_TRANSLATION_STRATEGY || "text",
   TRANSLATION_RETRY_BASE_SECONDS: "1",
   // Tiny parts so the document strategy's split/merge is exercised by small test books.

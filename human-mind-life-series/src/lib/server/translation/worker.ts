@@ -6,6 +6,7 @@ import { completeOrdersForKey, failOrdersForKey } from "../fulfillment";
 import { getBookSource } from "./bookSource";
 import { translateBook } from "./bookTranslationService";
 import { getTranslationService } from "./googleTranslationService";
+import { hasTextLayer } from "./parsers/pdfParser";
 
 export type JobRow = {
   id: number;
@@ -63,6 +64,13 @@ export async function runJob(job: JobRow): Promise<"COMPLETED" | "RETRY" | "FAIL
     if (source.version !== job.source_version) {
       // The English book changed after this job was queued — this cache key is obsolete.
       throw Object.assign(new Error(`Source changed (${job.source_version} → ${source.version}); new orders will use the new version.`), { permanent: true });
+    }
+    if (!(await hasTextLayer(source.filePath))) {
+      // A scanned book would come back untranslated (text strategy) or be rejected by Google (document strategy).
+      throw Object.assign(
+        new Error(`storage/books/${job.book_slug}.pdf has no selectable text (scanned / image-only). Run OCR on it, upload it again, then use “Retry automatic delivery” on each affected order.`),
+        { permanent: true },
+      );
     }
 
     logger.info("Translation started", { jobId: job.id, key: job.cache_key, attempt: job.attempts });

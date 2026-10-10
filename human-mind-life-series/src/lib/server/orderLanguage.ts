@@ -1,13 +1,13 @@
 import "server-only";
-import { translationEnabled } from "@/config/env.server";
+import { translationOffered } from "@/config/env.server";
 import { getBook } from "@/lib/products";
 import { getBookSource } from "./translation/bookSource";
 import { resolveTargetLanguage, SOURCE_LANGUAGE } from "./translation/languages";
 import type { Language } from "./translation/googleTranslationService";
 
-/** True when a book can be delivered in other languages: translation configured AND its private source PDF is on the server. */
+/** True when a book is sold in other languages: translated editions switched on (TRANSLATION_SALES_ENABLED) AND its private source PDF is on the server. */
 export function bookIsTranslatable(slug: string): boolean {
-  return translationEnabled() && !!getBookSource(slug);
+  return translationOffered() && !!getBookSource(slug);
 }
 
 /**

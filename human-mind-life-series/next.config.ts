@@ -41,8 +41,14 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Optional: build into another folder (e.g. NEXT_DIST_DIR=.next-test) so a test build doesn't clash with `next dev`.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // Private runtime data (orders.db, book PDFs, payment screenshots) must never be copied into a build
+  // (e.g. the standalone output Hostinger builds), whatever the file tracer infers from storage paths.
+  outputFileTracingExcludes: {
+    "/*": ["./storage/**/*"],
+    "/**": ["./storage/**/*"],
+  },
   // Server-only packages loaded from node_modules at runtime instead of being bundled.
-  serverExternalPackages: ["better-sqlite3", "@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
+  serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
   turbopack: {
     rules: {
       "*.css": {

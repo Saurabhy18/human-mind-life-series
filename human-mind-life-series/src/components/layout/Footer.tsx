@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { BUSINESS_EMAIL, CONFIG, isPlaceholder } from "@/config/site.config";
 import { ALL_BOOKS } from "@/lib/products";
+import { paymentCopy } from "@/content/paymentCopy";
+import { checkoutMode } from "@/lib/server/paymentService";
 import { countWord } from "@/lib/text";
 import { SocialLinks } from "../SocialLinks";
 
@@ -64,7 +66,7 @@ export function Footer() {
       <div className="border-t border-white/10">
         <div className="container-page flex flex-col gap-2 py-6 text-xs text-white/55 sm:flex-row sm:items-center sm:justify-between">
           <p>© {year} {CONFIG.PUBLISHER_NAME}. All rights reserved.</p>
-          <p>Secure UPI payments · We never ask for your UPI PIN, OTP or bank password.</p>
+          <p>{paymentCopy(checkoutMode()).footer} · We never ask for your UPI PIN, OTP or bank password.</p>
         </div>
       </div>
     </footer>

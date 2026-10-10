@@ -2,9 +2,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CONFIG } from "@/config/site.config";
-import { ALL_BOOKS, formatINR, formatPrice, getBook } from "@/lib/products";
+import { PACKAGES } from "@/config/packages";
+import { ALL_BOOKS, bundleEnabled, formatINR, getBook, packageCheckoutHref } from "@/lib/products";
 import { bookOgImage, bookSchema, breadcrumbSchema, faqSchema, pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";
+import { BookPrice } from "@/components/BookPrice";
+import { OfferCountdown } from "@/components/OfferCountdown";
 import { FaqList } from "@/components/FaqList";
 import { JsonLd } from "@/components/JsonLd";
 import { TrackView } from "@/components/tracking/TrackView";
@@ -13,6 +16,10 @@ import { bookFaqs, Disclaimer, LearnList, SamplePreview, TableOfContents, TopicL
 import { IconArrowRight, IconCheck } from "@/components/icons";
 import { FreeBadge, FreeBookSection } from "@/components/free/FreeBookSection";
 import { BookPurchase } from "@/components/translation/BookPurchase";
+import { paymentCopy } from "@/content/paymentCopy";
+import { checkoutMode } from "@/lib/server/paymentService";
+import { translationOffered } from "@/config/env.server";
+import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -32,7 +39,9 @@ export default async function BookPage({ params }: Props) {
   const book = getBook((await params).slug);
   if (!book) notFound();
 
-  const faqs = bookFaqs(book);
+  const mode = checkoutMode();
+  const pay = paymentCopy(mode);
+  const faqs = bookFaqs(book, mode);
   const others = ALL_BOOKS.filter((b) => b.slug !== book.slug);
   const tracked = { slug: book.slug, label: book.label, price: book.price };
 
@@ -115,19 +124,33 @@ export default async function BookPage({ params }: Props) {
                 <div className="flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <p className="text-sm text-muted">Price</p>
-                    <p className="font-serif text-4xl">{formatINR(book.price)}</p>
+                    <p className="font-serif text-4xl"><BookPrice book={book} size="lg" /></p>
                   </div>
                   <p className="text-sm text-muted">{CONFIG.BOOK_FORMAT} · Delivered by email / WhatsApp</p>
                 </div>
+                <OfferCountdown className="mt-5" />
                 <div className="mt-6">
-                  <BookPurchase slug={book.slug} />
+                  <BookPurchase slug={book.slug} translations={bookIsTranslatable(book.slug)} />
                   <Link href="/books" className="mt-3 inline-block text-sm font-medium text-muted underline-offset-2 hover:text-ink hover:underline">
                     View all volumes
                   </Link>
                 </div>
+                {bundleEnabled() && (
+                  <p className="mt-5 rounded-lg bg-cream px-4 py-3 text-sm text-ink/80">
+                    Save with a bundle:{" "}
+                    <Link href={packageCheckoutHref("three_book_bundle", book.slug)} className="font-semibold underline underline-offset-2 hover:text-gold-dark">
+                      any {PACKAGES.three_book_bundle.books} books for {formatINR(PACKAGES.three_book_bundle.price)}
+                    </Link>{" "}
+                    or{" "}
+                    <Link href={packageCheckoutHref("five_book_bundle")} className="font-semibold underline underline-offset-2 hover:text-gold-dark">
+                      all {PACKAGES.five_book_bundle.books} for {formatINR(PACKAGES.five_book_bundle.price)}
+                    </Link>
+                    {translationOffered() ? ", each in the language you choose." : "."}
+                  </p>
+                )}
                 <ul className="mt-6 grid gap-2 text-sm text-muted sm:grid-cols-2">
-                  <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> Pay securely with any UPI app</li>
-                  <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> Payment personally verified</li>
+                  <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> {pay.bulletPay}</li>
+                  <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> {pay.bulletConfirmed}</li>
                   <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> Read on any device</li>
                   <li className="flex items-center gap-2"><IconCheck width={16} className="text-gold" /> Support by email &amp; WhatsApp</li>
                 </ul>
@@ -157,8 +180,9 @@ export default async function BookPage({ params }: Props) {
             ) : (
               <section aria-labelledby="buy-cta" className="rounded-3xl bg-ink p-8 text-white sm:p-10">
                 <h2 id="buy-cta" className="text-2xl text-white sm:text-3xl">Get {book.volumeLabel ?? book.title} today</h2>
-                <p className="mt-3 text-white/70">
-                  {book.title} — {formatINR(book.price)}. Pay by UPI and receive your book once your payment is verified.
+                <OfferCountdown tone="dark" className="mt-5" />
+                <p className="mt-5 text-white/70">
+                  {book.title} — <BookPrice book={book} tone="dark" size="sm" priceClassName="font-semibold text-white" />. {pay.bookCta}
                 </p>
                 <Link href={`/checkout/${book.slug}`} className="btn-gold mt-6 px-8 py-4 text-base">
                   Buy Now <IconArrowRight />
@@ -185,7 +209,7 @@ export default async function BookPage({ params }: Props) {
                 </div>
                 <p className="eyebrow mt-4">{b.volumeLabel ?? "Free Book"}</p>
                 <p className="mt-1 font-serif text-lg leading-snug group-hover:text-gold-dark">{b.title}</p>
-                <p className={`mt-1 text-sm ${b.free ? "font-semibold text-success" : "text-muted"}`}>{formatPrice(b)}</p>
+                <p className={`mt-1 text-sm ${b.free ? "font-semibold text-success" : "text-muted"}`}><BookPrice book={b} size="sm" priceClassName={b.free ? "" : "font-semibold text-ink"} /></p>
               </Link>
             ))}
           </div>

@@ -1,12 +1,8 @@
-import { CONFIG } from "@/config/site.config";
+import { paymentCopy } from "@/content/paymentCopy";
+import { checkoutMode } from "@/lib/server/paymentService";
 
 export function HowToBuy() {
-  const steps = [
-    { title: "Click “Buy Now”", text: "Choose your book and go to the secure payment page." },
-    { title: "Scan & pay by UPI", text: "Use Google Pay, PhonePe, Paytm, BHIM or any UPI app." },
-    { title: "Submit your details", text: "Enter your UTR / Transaction ID and upload a payment screenshot." },
-    { title: "Receive your book", text: `After verification, your ${CONFIG.BOOK_FORMAT} is sent to your email / WhatsApp.` },
-  ];
+  const steps = paymentCopy(checkoutMode()).howToBuy;
   return (
     <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {steps.map((s, i) => (

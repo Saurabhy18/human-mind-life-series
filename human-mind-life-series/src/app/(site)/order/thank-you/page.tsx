@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { BUSINESS_EMAIL, CONFIG } from "@/config/site.config";
+import { getPackage } from "@/config/packages";
 import { getProduct } from "@/lib/products";
 import { pageMetadata } from "@/lib/seo";
 import { mailtoLink, whatsappLink } from "@/lib/contact";
@@ -15,13 +16,16 @@ export const metadata: Metadata = pageMetadata({
   noIndex: true,
 });
 
-type Props = { searchParams: Promise<{ ref?: string; book?: string }> };
+type Props = { searchParams: Promise<{ ref?: string; book?: string; package?: string }> };
 
 export default async function ThankYouPage({ searchParams }: Props) {
   const sp = await searchParams;
   // Only a public order reference is shown — never any customer information.
   const ref = typeof sp.ref === "string" && /^HM-[A-Z0-9]{8}$/.test(sp.ref) ? sp.ref : null;
-  const product = typeof sp.book === "string" ? getProduct(sp.book) : undefined;
+  const book = typeof sp.book === "string" ? getProduct(sp.book) : undefined;
+  const pkg = getPackage(sp.package ?? "individual");
+  // What was ordered, for the order card and conversion tracking (the price is the package price).
+  const product = pkg && pkg.books > 1 ? { slug: pkg.id, label: pkg.name, price: pkg.price } : book && pkg ? { slug: book.slug, label: book.label, price: pkg.price } : undefined;
 
   const wa = whatsappLink(ref ? `Hello, I have submitted my payment details. Order reference: ${ref}` : undefined);
   const mail = mailtoLink(BUSINESS_EMAIL, ref ? `Order ${ref}` : "My order");
@@ -36,7 +40,7 @@ export default async function ThankYouPage({ searchParams }: Props) {
         </div>
         <h1 className="mt-6 animate-fade-up text-4xl sm:text-5xl">Thank You for Your Purchase!</h1>
         <p className="mt-5 animate-fade-up text-lg leading-relaxed text-muted">
-          Your payment details have been submitted successfully. We will verify your payment and send your purchased book to your registered email or WhatsApp.
+          Your payment details have been submitted successfully. Once we verify your payment, your ebooks are prepared in the languages you chose and delivered to you.
         </p>
 
         {ref && (
@@ -63,7 +67,7 @@ export default async function ThankYouPage({ searchParams }: Props) {
             <IconMail className="mt-0.5 shrink-0 text-gold-dark" />
             <div>
               <h2 className="font-sans text-sm font-semibold">Delivery</h2>
-              <p className="mt-1 text-sm text-muted">Your {CONFIG.BOOK_FORMAT} will be sent {CONFIG.DELIVERY_TIMEFRAME}.</p>
+              <p className="mt-1 text-sm text-muted">Your {CONFIG.BOOK_FORMAT} will be ready {CONFIG.DELIVERY_TIMEFRAME}. Download it from your order page, or we will send it to your email / WhatsApp.</p>
             </div>
           </div>
         </div>
