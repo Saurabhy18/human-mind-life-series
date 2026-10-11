@@ -5,6 +5,7 @@ import { DEFAULT_LANGUAGE } from "@/config/languages";
 import { formatMoney, type PackageId, type PurchasePackage, type PurchaseSelection } from "@/config/packages";
 import { IconArrowRight, IconCheck, IconShield } from "../icons";
 import { Price } from "../Price";
+import { ChargedInInrNote } from "../currency/ChargedInInrNote";
 import { OfferCountdown } from "../OfferCountdown";
 import { LanguageSelector, useLanguageNames } from "../translation/LanguageSelector";
 import { GatewayCheckout } from "./GatewayCheckout";
@@ -317,6 +318,7 @@ function OrderSummary({ pkg, items, children }: { pkg: PurchasePackage; items: {
           </dd>
         </div>
       </dl>
+      <ChargedInInrNote inrAmount={pkg.price} className="mt-3" />
       {pkg.originalPrice ? <OfferCountdown className="mt-4" /> : null}
       {children}
     </section>

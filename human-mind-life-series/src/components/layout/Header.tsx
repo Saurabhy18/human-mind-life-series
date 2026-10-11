@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { IconClose, IconMenu } from "../icons";
+import { CurrencySelect } from "../currency/CurrencySelect";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -64,20 +65,24 @@ export function Header() {
               {item.label}
             </Link>
           ))}
+          <CurrencySelect />
           <Link href="/books" className="btn-primary px-5 py-2.5">
             Buy the Books
           </Link>
         </nav>
-        <button
+        <div className="flex items-center gap-2 md:hidden">
+          <CurrencySelect />
+          <button
           type="button"
-          className="-mr-2 rounded-full p-2 text-ink md:hidden"
+          className="-mr-2 rounded-full p-2 text-ink"
           aria-label={open ? "Close menu" : "Open menu"}
           aria-expanded={open}
           aria-controls="mobile-menu"
           onClick={() => setOpenOn(open ? null : pathname)}
         >
-          {open ? <IconClose width={24} height={24} /> : <IconMenu width={24} height={24} />}
-        </button>
+            {open ? <IconClose width={24} height={24} /> : <IconMenu width={24} height={24} />}
+          </button>
+        </div>
       </div>
       {open && (
         <nav id="mobile-menu" aria-label="Mobile" className="h-[calc(100dvh-4rem)] border-t border-line bg-paper md:hidden">

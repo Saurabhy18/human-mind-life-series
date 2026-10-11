@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { CONFIG, SITE_URL } from "@/config/site.config";
 import { Analytics } from "@/components/tracking/Analytics";
+import { CurrencyProvider } from "@/components/currency/CurrencyContext";
 import { ALL_BOOKS } from "@/lib/products";
 import "./globals.css";
 
@@ -35,7 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en-IN" className={`${fraunces.variable} ${inter.variable}`}>
       <body className="min-h-dvh">
-        {children}
+        <CurrencyProvider>{children}</CurrencyProvider>
         <Analytics />
       </body>
     </html>
