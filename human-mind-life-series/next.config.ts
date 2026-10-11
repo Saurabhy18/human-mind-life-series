@@ -52,16 +52,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
   turbopack: {
     // Pin the Turbopack root to THIS app directory. Hostinger deploys the repo
-    // root (which contains this app in a subfolder plus a stray lockfile), so
-    // without this Turbopack infers the wrong root and the CSS pipeline fails
-    // in production while processing globals.css.
+    // root (which contains this app in a subfolder), so without this Turbopack
+    // could infer the wrong root and the CSS pipeline fails in production.
+    // CSS is handled by @tailwindcss/postcss via postcss.config.mjs, which
+    // Turbopack runs natively — no custom per-file loader rule required.
     root: path.resolve(__dirname),
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
   },
   async headers() {
     return [
