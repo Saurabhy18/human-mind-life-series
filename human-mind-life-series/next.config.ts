@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const isProd = process.env.NODE_ENV === "production";
 // Razorpay's hosted checkout is only allowed when it is actually switched on.
@@ -50,6 +51,11 @@ const nextConfig: NextConfig = {
   // Server-only packages loaded from node_modules at runtime instead of being bundled.
   serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
   turbopack: {
+    // Pin the Turbopack root to THIS app directory. Hostinger deploys the repo
+    // root (which contains this app in a subfolder plus a stray lockfile), so
+    // without this Turbopack infers the wrong root and the CSS pipeline fails
+    // in production while processing globals.css.
+    root: path.resolve(__dirname),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
