@@ -57,3 +57,18 @@ next-env.d.ts
 
 # alternative build folders used for testing (NEXT_DIST_DIR)
 /.next-*/
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and build
+node_modules/
+.next/
+out/
+dist/
+
+# Local database and sensitive data
+.db
+.db-shm
+.db-wal
