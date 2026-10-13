@@ -6,6 +6,7 @@ import { formatMoney } from "@/config/packages";
 import { IconCheck, IconClock } from "../icons";
 import { DownloadButton } from "./DownloadButton";
 import { TOKEN_RE, useUrlParam } from "./useUrlParam";
+import { orderTokenKey } from "../checkout/GatewayCheckout";
 
 type Stage = "PAYMENT_PENDING" | "PAYMENT_FAILED" | "PAYMENT_SUCCESSFUL" | "PREPARING" | "TRANSLATING" | "GENERATING" | "READY" | "EXPIRED" | "FAILED" | "MANUAL_DELIVERY";
 
@@ -35,11 +36,26 @@ const FINAL: Stage[] = ["READY", "EXPIRED", "FAILED", "PAYMENT_FAILED", "MANUAL_
 
 /** Customer order page: polls GET /api/orders/:id/status and shows each ebook's progress, then its download button. */
 export function TranslationProgress({ orderRef, gateway }: { orderRef: string; gateway: boolean }) {
-  const token = useUrlParam("t", "hash", TOKEN_RE);
+  const fragmentToken = useUrlParam("t", "hash", TOKEN_RE);
+  const [storedToken, setStoredToken] = useState<string | null>(null);
+  // After the Cashfree full-page redirect the #t= fragment is gone; recover the token that checkout saved
+  // in this tab's sessionStorage (same-origin, never left the browser). The fragment still takes priority.
+  useEffect(() => {
+    if (fragmentToken) return;
+    try {
+      const t = sessionStorage.getItem(orderTokenKey(orderRef));
+      if (t && TOKEN_RE.test(t)) setStoredToken(t);
+    } catch {
+      /* storage blocked */
+    }
+  }, [fragmentToken, orderRef]);
+  const token = fragmentToken ?? storedToken;
   const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState("");
-  const verified = useRef(false);
+  // Gateway payments are confirmed by re-asking Cashfree (server-side) until the order resolves.
+  const paymentResolved = useRef(false); // true once the server reports PAID or FAILED
+  const verifyTries = useRef(0); // bound how many times we re-poll Cashfree while still PENDING
 
   useEffect(() => {
     const t = setTimeout(() => setHydrated(true), 0);
@@ -49,13 +65,16 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      // After returning from the gateway, ask the SERVER to confirm with the gateway once.
-      const url = gateway && !verified.current ? "/api/payment/verify" : `/api/orders/${orderRef}/status`;
-      const res =
-        url === "/api/payment/verify"
-          ? await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-order-token": token }, body: JSON.stringify({ orderId: orderRef }) })
-          : await fetch(url, { headers: { "x-order-token": token }, cache: "no-store" });
-      verified.current = true;
+      // While a gateway payment is still unresolved, re-ask the SERVER to confirm with Cashfree on each
+      // poll (the webhook may be delayed, or — in local dev — unable to reach this machine). Once the
+      // payment is PAID/FAILED, switch to the lighter status endpoint for fulfillment progress. The server
+      // marks an order PAID only after Cashfree confirms it; the browser never decides.
+      const reverify = gateway && !paymentResolved.current && verifyTries.current < 60;
+      if (reverify) verifyTries.current += 1;
+      const url = reverify ? "/api/payment/verify" : `/api/orders/${orderRef}/status`;
+      const res = reverify
+        ? await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-order-token": token }, body: JSON.stringify({ orderId: orderRef }) })
+        : await fetch(url, { headers: { "x-order-token": token }, cache: "no-store" });
       const json = (await res.json()) as Status & { success?: boolean; message?: string };
       if (!res.ok || !json.success) {
         setError(json.message ?? "We could not find this order.");
@@ -63,10 +82,17 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       }
       setError("");
       setStatus(json);
+      if (json.paymentStatus === "PAID" || json.paymentStatus === "FAILED") paymentResolved.current = true;
     } catch {
       /* temporary network problem — keep polling */
     }
   }, [token, orderRef, gateway]);
+
+  /** Manual "Check again": force a fresh Cashfree re-verification even after the automatic cap. */
+  const recheck = useCallback(() => {
+    if (!paymentResolved.current) verifyTries.current = 0;
+    load();
+  }, [load]);
 
   useEffect(() => {
     if (!token) return;
@@ -128,9 +154,16 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
         </h2>
 
         {status.stage === "PAYMENT_PENDING" && (
-          <p className="mx-auto mt-4 max-w-md text-muted">
-            {gateway ? "We are waiting for confirmation from the payment gateway." : "Your payment is being verified."} Please wait — this page updates automatically.
-          </p>
+          <div className="mx-auto mt-4 max-w-md">
+            <p className="text-muted">
+              {gateway ? "We are waiting for confirmation from the payment gateway." : "Your payment is being verified."} This page checks automatically. If you have just completed payment, it can take a few moments.
+            </p>
+            {gateway && (
+              <button type="button" onClick={recheck} className="btn-outline mt-4 text-sm">
+                Check payment status again
+              </button>
+            )}
+          </div>
         )}
         {status.stage === "PAYMENT_FAILED" && <p className="mx-auto mt-4 max-w-md text-muted">Payment could not be completed. Please try again. No ebook has been issued.</p>}
         {paid && working && <p className="mx-auto mt-4 max-w-md text-muted">Your {many ? "ebooks are" : "ebook is"} being prepared. You can download each one as soon as it is ready.</p>}

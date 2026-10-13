@@ -7,6 +7,8 @@ const cashfree = process.env.PAYMENT_PROVIDER === "cashfree";
 const cfScript = cashfree ? " https://sdk.cashfree.com https://*.cashfree.com" : "";
 const cfConnect = cashfree ? " https://*.cashfree.com" : "";
 const cfFrame = cashfree ? " https://*.cashfree.com" : "";
+// The hosted-checkout redirect submits a form to Cashfree, so its domains must be allowed in form-action.
+const cfForm = cashfree ? " https://*.cashfree.com" : "";
 // Signed download URLs may point at a private Google Cloud Storage bucket.
 const gcsConnect = process.env.BOOK_STORAGE_BUCKET ? " https://storage.googleapis.com" : "";
 
@@ -23,7 +25,7 @@ const csp = [
   `connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.doubleclick.net https://www.google.com https://www.googleadservices.com https://www.facebook.com https://connect.facebook.net${cfConnect}${gcsConnect}`,
   `frame-src https://www.googletagmanager.com https://td.doubleclick.net https://www.facebook.com${cfFrame}`,
   "frame-ancestors 'none'",
-  "form-action 'self'",
+  `form-action 'self'${cfForm}`,
   "base-uri 'self'",
   "object-src 'none'",
   ...(isProd ? ["upgrade-insecure-requests"] : []),
@@ -40,6 +42,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Dev only: allow a public tunnel (e.g. cloudflared *.trycloudflare.com) to reach the dev server,
+  // so Cashfree sandbox UPI — which needs a public https URL — can be tested from localhost.
+  ...(isProd ? {} : { allowedDevOrigins: ["*.trycloudflare.com"] }),
   // Optional: build into another folder (e.g. NEXT_DIST_DIR=.next-test) so a test build doesn't clash with `next dev`.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   // Private runtime data (orders.db, book PDFs, payment screenshots) must never be copied into a build

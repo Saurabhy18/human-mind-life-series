@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Cashfree } from "@cashfreepayments/cashfree-js";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
 import { IconShield } from "../icons";
+
+/** Browser-only key where the order's access token is kept across the full-page redirect to Cashfree
+ * (the #t=… URL fragment is lost on redirect). Same-origin, per-tab, and NEVER sent to Cashfree. */
+export const orderTokenKey = (orderId: string) => `hm:order-token:${orderId}`;
 
 type Checkout = { provider: "cashfree"; mode: "sandbox" | "production"; paymentSessionId: string; orderRef: string; amount: number; currency: string };
 
@@ -56,16 +61,50 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         return;
       }
       const c = payJson.checkout;
-      // Cashfree hosted checkout (opened in a modal). The result is NEVER trusted to mark the order paid:
-      // on close we send the customer to the status page, which asks the server to verify with Cashfree.
-      const { load } = await import("@cashfreepayments/cashfree-js");
-      const cashfree = await load({ mode: c.mode });
-      const result = await cashfree.checkout({ paymentSessionId: c.paymentSessionId, redirectTarget: "_modal" });
-      if (result && (result as { error?: unknown }).error) {
-        setMessage("Payment was not completed. You have not been charged — you can try again.");
+      // Keep the access token so the status page can recover it after the redirect back from Cashfree.
+      try {
+        sessionStorage.setItem(orderTokenKey(order.orderId), order.accessToken);
+      } catch {
+        /* private mode / storage blocked — the #t= fragment still covers the common case */
+      }
+
+      // Load the Cashfree SDK, with a timeout so a blocked or slow SDK can never leave the button spinning.
+      let cashfree: Cashfree | undefined;
+      try {
+        const { load } = await import("@cashfreepayments/cashfree-js");
+        cashfree = await Promise.race([
+          load({ mode: c.mode }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("sdk-load-timeout")), 15000)),
+        ]);
+      } catch {
+        setMessage("We couldn't load the secure payment window. Check your connection (and disable any ad/tracker blocker for this site), then try again.");
         return;
       }
-      router.push(statusPage);
+      if (!cashfree) {
+        setMessage("We couldn't start the payment. Please try again.");
+        return;
+      }
+
+      // Full-page redirect to Cashfree's hosted checkout — the most compatible option (no embedded iframe,
+      // so modern-browser third-party-storage blocking can't stall it). On success the page navigates away
+      // and Cashfree returns to the order status page, which verifies the payment SERVER-side. The browser
+      // is never trusted to mark an order paid.
+      try {
+        // On success the page redirects to Cashfree and unloads, so this await never resolves. We race it
+        // against a timeout so a stalled checkout can never leave the loading state (or the SDK overlay)
+        // stuck forever — we surface an actionable error instead.
+        const result = await Promise.race<{ error?: unknown } | void>([
+          cashfree.checkout({ paymentSessionId: c.paymentSessionId, redirectTarget: "_self" }),
+          new Promise<{ error: { message: string } }>((resolve) => setTimeout(() => resolve({ error: { message: "redirect-timeout" } }), 20000)),
+        ]);
+        if (result && (result as { error?: unknown }).error) {
+          setMessage("The payment page didn't open. Please try again, or use a different browser — you have not been charged.");
+        } else {
+          router.push(statusPage);
+        }
+      } catch {
+        setMessage("The payment window could not open. Please try again, or use a different browser.");
+      }
     } catch {
       setMessage("Network error. Please check your connection and try again.");
     } finally {

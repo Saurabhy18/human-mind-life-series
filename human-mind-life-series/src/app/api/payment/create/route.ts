@@ -24,7 +24,8 @@ export async function POST(req: Request) {
   if (order.payment_status === "PAID") return NextResponse.json({ success: false, message: "This order is already paid." }, { status: 409 });
 
   try {
-    const checkout = await createGatewayPayment(order);
+    // isSameOrigin() above already verified this Origin is our own site, so it is safe as the return base.
+    const checkout = await createGatewayPayment(order, req.headers.get("origin") || undefined);
     return NextResponse.json({ success: true, checkout });
   } catch (err) {
     logger.error("Payment create failed", { orderId: order.id, error: errorMessage(err) });

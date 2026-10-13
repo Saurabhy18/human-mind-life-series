@@ -93,9 +93,14 @@ export type CheckoutData = {
   currency: string;
 };
 
-/** Creates (or reuses) the Cashfree order for one of our orders. Returns only what the checkout SDK needs. */
-export async function createGatewayPayment(order: Order): Promise<CheckoutData> {
+/**
+ * Creates (or reuses) the Cashfree order for one of our orders. Returns only what the checkout SDK needs.
+ * `returnBaseUrl` (the customer's current origin) is where Cashfree sends the browser back after the hosted
+ * checkout; it defaults to the configured site URL. The webhook `notify_url` always stays the public site URL.
+ */
+export async function createGatewayPayment(order: Order, returnBaseUrl?: string): Promise<CheckoutData> {
   if (!cashfreeConfigured()) throw new Error("Payment gateway is not configured");
+  const returnBase = (returnBaseUrl || ENV.frontendUrl).replace(/\/$/, "");
 
   let cf: CfOrder;
   if (order.provider_order_id) {
@@ -113,7 +118,7 @@ export async function createGatewayPayment(order: Order): Promise<CheckoutData> 
         customer_phone: PLACEHOLDER_PHONE,
       },
       order_meta: {
-        return_url: `${ENV.frontendUrl}/order/status/${order.ref}`,
+        return_url: `${returnBase}/order/status/${order.ref}`,
         notify_url: `${ENV.frontendUrl}/api/payment/webhook`,
       },
       order_note: order.product_title.slice(0, 200),
