@@ -47,7 +47,7 @@ next-env.d.ts
 !.env.example
 
 # private data: orders database, payment screenshots, book PDFs
-/storage/
+# /storage/
 # database files and downloaded backups anywhere in the project (never commit customer data)
 *.db
 *.db-wal
