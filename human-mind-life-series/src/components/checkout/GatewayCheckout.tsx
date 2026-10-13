@@ -6,28 +6,11 @@ import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
 import { IconShield } from "../icons";
 
-type Checkout = { keyId: string; providerOrderId: string; amount: number; currency: string; name: string; description: string; prefill: { name: string; email: string } };
-type RazorpayInstance = { open: () => void; on: (event: string, cb: (r: unknown) => void) => void };
-declare global {
-  interface Window {
-    Razorpay?: new (opts: Record<string, unknown>) => RazorpayInstance;
-  }
-}
-
-function loadRazorpay(): Promise<void> {
-  if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Could not load the payment window."));
-    document.head.appendChild(s);
-  });
-}
+type Checkout = { provider: "cashfree"; mode: "sandbox" | "production"; paymentSessionId: string; orderRef: string; amount: number; currency: string };
 
 /**
- * Payment-gateway checkout (only when PAYMENT_PROVIDER=razorpay).
- * Order (package + ebooks + languages; the server sets the price) → gateway checkout →
+ * Payment-gateway checkout (only when PAYMENT_PROVIDER=cashfree).
+ * Order (package + ebooks + languages; the server sets the price) → Cashfree hosted checkout →
  * the SERVER confirms payment (webhook / API) → order page.
  * The browser's "success" callback is never trusted: it only triggers a server-side check.
  */
@@ -72,23 +55,17 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         setMessage(payJson.message ?? "We could not start the payment.");
         return;
       }
-      await loadRazorpay();
       const c = payJson.checkout;
-      const rzp = new window.Razorpay!({
-        key: c.keyId,
-        order_id: c.providerOrderId,
-        amount: c.amount,
-        currency: c.currency,
-        name: c.name,
-        description: c.description,
-        prefill: c.prefill,
-        theme: { color: "#0f1b2d" },
-        // Success here only means "go and check": the server verifies with the gateway itself.
-        handler: () => router.push(statusPage),
-        modal: { ondismiss: () => setMessage("Payment was cancelled. You have not been charged — you can try again.") },
-      });
-      rzp.on("payment.failed", () => setMessage("The payment did not go through. You have not been charged — please try again."));
-      rzp.open();
+      // Cashfree hosted checkout (opened in a modal). The result is NEVER trusted to mark the order paid:
+      // on close we send the customer to the status page, which asks the server to verify with Cashfree.
+      const { load } = await import("@cashfreepayments/cashfree-js");
+      const cashfree = await load({ mode: c.mode });
+      const result = await cashfree.checkout({ paymentSessionId: c.paymentSessionId, redirectTarget: "_modal" });
+      if (result && (result as { error?: unknown }).error) {
+        setMessage("Payment was not completed. You have not been charged — you can try again.");
+        return;
+      }
+      router.push(statusPage);
     } catch {
       setMessage("Network error. Please check your connection and try again.");
     } finally {

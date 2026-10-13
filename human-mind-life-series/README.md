@@ -56,7 +56,7 @@ Customers choose one of three packages on the payment page, then their books, th
 | 3 Book Bundle | any 3 (customer chooses) | ₹649 (a fixed price, not 3 × ₹299) |
 | 5 Book Bundle | all 5 paid volumes | ₹999 (a fixed price, not 5 × ₹299) |
 
-- Change prices in `src/config/packages.ts` only. Book pages, cards, SEO data, the payment page, Razorpay and the server's checks all read from it.
+- Change prices in `src/config/packages.ts` only. Book pages, cards, SEO data, the payment page, Cashfree and the server's checks all read from it.
 - The server works out the price from the package. Any amount sent by the browser is ignored. A bundle with the wrong number of books, the same book twice, a free book, or a missing or unsupported language is rejected.
 - Links: `/checkout/<book>` (Individual, book pre-selected), `/checkout?package=three_book_bundle` (add `&book=<slug>` to pre-select one), `/checkout/complete-series` (5 Book Bundle). The Books page, home page, book pages and `/lp/series` link to the bundles automatically.
 - Amounts are stored as `amount` + `currency` (INR today), so other currencies can be added later in `packages.ts` and the payment gateway.
@@ -77,7 +77,7 @@ Home → Book page → Buy Now → Payment page (/checkout/<book>)
     books without one are sent by YOU by email/WhatsApp → mark "Book Delivered"
 ```
 
-> **Checkout modes** (`PAYMENT_PROVIDER`, see §9.3): `none` (**the default**) keeps checkout **closed** — visitors can choose packages and see prices, but no order or payment is accepted. `razorpay` uses Razorpay Checkout. `manual_upi` is the older flow described above (it shows your UPI ID) and must be switched on deliberately.
+> **Checkout modes** (`PAYMENT_PROVIDER`, see §9.3): `none` (**the default**) keeps checkout **closed** — visitors can choose packages and see prices, but no order or payment is accepted. `cashfree` uses the Cashfree hosted checkout. `manual_upi` is the older flow described above (it shows your UPI ID) and must be switched on deliberately.
 >
 > **Only deliverable books can be ordered:** a paid book can be bought only when its PDF is in `storage/books/<slug>.pdf` and opens as a valid PDF. Books without one stay listed, but checkout won't take payment for them, or for a bundle that includes them. `/admin/setup` shows which PDFs are present.
 
@@ -250,8 +250,8 @@ Checklist before going live:
 5. Upload all five paid PDFs to `storage/books/` with the exact names in §4 and confirm they show as **Found** in `/admin/setup`.
 6. Back up `storage/` regularly (`/admin/setup → Download database backup` for the database).
 7. Set `SMTP_*` / `EMAIL_FROM` so customers receive their private order link by email (without email they only have the link shown after payment).
-8. After Razorpay approves your account: set `PAYMENT_PROVIDER=razorpay` and the keys on the server, rebuild, and place a test-mode order end to end (§9.3).
-9. Have a legal professional review the Privacy, Terms and Refund pages. They still describe the manual UPI flow and must be updated to match Razorpay checkout before payments open.
+8. After your Cashfree account is approved: set `PAYMENT_PROVIDER=cashfree` and the credentials on the server, rebuild, and place a Cashfree **sandbox** order end to end before switching to production (§9.3).
+9. Have a legal professional review the Privacy, Terms and Refund pages. They still describe the manual UPI flow and must be updated to match the Cashfree checkout before payments open.
 
 ---
 
@@ -324,16 +324,16 @@ Credentials are read only by the server and worker through Google's Application 
 
 - **`PAYMENT_PROVIDER=none`** (default): checkout is **closed**. `POST /api/orders` refuses every order, and the checkout page says that no payment can be made yet. Your UPI ID is not shown anywhere.
 - **`PAYMENT_PROVIDER=manual_upi`** (opt-in only): customers pay your UPI QR and submit UTR + screenshot. When you click **Payment Verified** in the admin panel, that counts as the server-side verification and starts delivery.
-- **`PAYMENT_PROVIDER=razorpay`** (enable only after Razorpay has approved your account; if any key is missing, checkout stays closed):
-  1. Get API keys in the Razorpay Dashboard (*Settings → API Keys*): `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`. On your computer only **test-mode** keys (`rzp_test_…`) are accepted, so local testing can't charge real money. Live keys work only on the production server.
-  2. Add a webhook in *Settings → Webhooks*: URL `https://your-domain.com/api/payment/webhook`, events `payment.captured`, `order.paid`, `payment.failed`, and a secret → `RAZORPAY_WEBHOOK_SECRET`.
-  3. Rebuild and restart (`npm run build && npm start`). The payment step now shows name, email and **BUY NOW**, then opens Razorpay Checkout. The site's wording switches from manual UPI to online payment automatically.
+- **`PAYMENT_PROVIDER=cashfree`** (enable only after your Cashfree account is approved; if any credential is missing, checkout stays closed):
+  1. Get API credentials in the Cashfree Merchant Dashboard (*Developers → API Keys*): `CASHFREE_CLIENT_ID`, `CASHFREE_SECRET_KEY`. Use **sandbox** credentials first. Outside production the app is pinned to Cashfree **sandbox** (`CASHFREE_ENV` is forced to `sandbox` unless `NODE_ENV=production` too), so local testing can't move real money. Production is used only when `NODE_ENV=production` **and** `CASHFREE_ENV=production`.
+  2. Add a webhook in *Developers → Webhooks*: URL `https://your-domain.com/api/payment/webhook`, events `PAYMENT_SUCCESS_WEBHOOK`, `PAYMENT_FAILED_WEBHOOK`, `PAYMENT_USER_DROPPED_WEBHOOK`. Cashfree signs webhooks with your `CASHFREE_SECRET_KEY` — there is no separate webhook secret.
+  3. Rebuild and restart (`npm run build && npm start`). The payment step now shows name, email and **BUY NOW**, then opens the Cashfree hosted checkout (modal). The site's wording switches from manual UPI to online payment automatically.
   - The webhook is accepted only if all of these hold:
-    - the HMAC signature matches;
-    - the gateway order, receipt, **amount** and **currency** match ours;
-    - the payment is captured;
-    - Razorpay's own API confirms the order is paid.
-  - The Razorpay payment ID is the idempotency key, so repeated webhooks are ignored.
+    - the Cashfree HMAC signature (Base64 of `x-webhook-timestamp` + the raw body, keyed with the secret) matches;
+    - the Cashfree order id (= our order ref), **amount** and **currency** match ours;
+    - the payment status is `SUCCESS`;
+    - Cashfree's own API confirms the order is `PAID`.
+  - The Cashfree payment id (`cf_payment_id`) is the idempotency key, so repeated webhooks are ignored.
   - The browser's "success" callback only triggers a server-to-server check; it never unlocks anything.
 
 ### 9.4 API
@@ -346,8 +346,8 @@ All responses are JSON. "Token" means the customer's private order token, sent a
 | `GET /api/books/:bookId` | Public book info: `id, title, author, sourceLanguage, price, currency, active, multilingual`. The file path is never exposed. |
 | `POST /api/orders` (JSON, gateway) | `{ packageId, items: [{ bookId, language }], customerName, customerEmail, consent: true }` → `{ success, orderId, packageId, amount, currency, paymentRequired, accessToken }`. `packageId` is `individual`, `three_book_bundle` or `five_book_bundle`. The amount comes from `src/config/packages.ts`; any price sent is ignored. (The older `{ bookId, targetLanguage }` form is still accepted as an Individual Ebook.) |
 | `POST /api/orders` (multipart, UPI) | UPI form fields plus `packageId` and `items` (JSON, as above) → `{ ok, ref, accessToken }`. |
-| `POST /api/payment/create` + token | `{ orderId }` → `{ success, checkout: { keyId, providerOrderId, amount, currency, … } }`. Never includes the secret. |
-| `POST /api/payment/webhook` | Razorpay → server. Signature-verified and idempotent. |
+| `POST /api/payment/create` + token | `{ orderId }` → `{ success, checkout: { provider, mode, paymentSessionId, orderRef, amount, currency } }`. Never includes the secret. |
+| `POST /api/payment/webhook` | Cashfree → server. Signature-verified (raw body) and idempotent. |
 | `POST /api/payment/verify` + token | Asks the gateway (server to server) whether the order is paid. Ignores anything the browser sends. |
 | `GET /api/orders/:orderId/status` + token | `{ orderId, packageName, amount, currency, paymentStatus, fulfillmentStatus, stage, progress, items: [{ itemId, title, volumeLabel, targetLanguage, languageName, stage, progress, downloadsRemaining, accessExpiresAt }] }` |
 | `GET /api/orders/:orderId/download?item=<itemId>` + token | One book of the order (`item` may be left out when the order has one book). `{ success, downloadUrl, expiresInSeconds }` only if the order is PAID, the book belongs to **this** order and is ready, within its access window and download limit. Otherwise 402 `NOT_PAID`, 409 `NOT_READY`, 410 `EXPIRED`, 429 `LIMIT_REACHED`, or 404 for an unknown order, a wrong token or another order's book (the same response, so nothing can be probed). Download limits and access periods apply per book. |
@@ -391,7 +391,7 @@ npm test                        # 92 automated tests (no Google account or cost 
 - packages: ₹299 / ₹649 / ₹999 set by the server; prices sent by the browser ignored; wrong book counts (e.g. 2 books for the 3-book bundle, 4 for the 5-book bundle), duplicates, free or unknown books, missing or unsupported languages rejected
 - bundles with a different language per book: English delivered at once, translations queued once and shared between orders, cached PDFs reused without calling Google again, one "ready" email per order
 - per-book downloads: unpaid, not ready, another customer's book, a language that wasn't bought
-- Razorpay bundle amounts (paying ₹299 for a ₹649 order is rejected)
+- Cashfree bundle amounts (paying ₹299 for a ₹649 order is rejected)
 - moving old orders into `order_items`
 - scanned (image-only) source PDFs detected
 - languages API
@@ -403,7 +403,7 @@ npm test                        # 92 automated tests (no Google account or cost 
 - downloads: unpaid denied, paid-but-processing "not ready", completed allowed, expired link, tampered link, invalid order, another customer's token, download limit, access period
 - the emailed link
 
-Test pages and webhooks can be sent to Razorpay **test mode** keys before going live.
+Test pages and webhooks can be exercised against Cashfree **sandbox** credentials before going live.
 
 ### 9.7 Production
 
@@ -422,7 +422,7 @@ Test pages and webhooks can be sent to Razorpay **test mode** keys before going 
 - **Storage:**
   - **Local disk (`storage/`):** must be persistent and backed up.
   - **Private GCS bucket:** set `BOOK_STORAGE_BUCKET`. Keep "public access prevention" ON, and give the service account object access.
-- **HTTPS** and security headers are already configured. The Razorpay domains are added to the Content-Security-Policy automatically when `PAYMENT_PROVIDER=razorpay`.
+- **HTTPS** and security headers are already configured. The Cashfree domains (`*.cashfree.com`, `sdk.cashfree.com`) are added to the Content-Security-Policy automatically when `PAYMENT_PROVIDER=cashfree`.
 - Upload each English source PDF to `storage/books/<slug>.pdf`. Only process books you own or have the rights to translate and distribute.
 
 ### 9.8 Estimated Google cost per book
@@ -450,7 +450,7 @@ Because of caching this is paid **once per book per language**, not per customer
 - **No customer accounts:** there is no customer login, so there is no cross-order "My Library". Each order's private page (`/order/status/<ref>#t=…`, linked from the thank-you page and every email) is that order's library: every book with its language, status and download button. A library across all of a customer's orders would need a customer login (e.g. an email sign-in link).
 - **Download protection:** downloaded PDFs can still be copied or shared. Short-lived signed links, per-order download limits, access windows and logging reduce misuse but can't prevent it.
 - **Scaling:** the rate limiter and SQLite queue suit one server. Use Redis/BullMQ (or Cloud Tasks) and a shared database before running several servers.
-- **Not tested against live services:** the Google API and Razorpay are tested with stand-ins (a fake translator and a mock Razorpay API), not live. Do one real order in Razorpay test mode and one real Google translation before launch.
+- **Not tested against live services:** the Google API and Cashfree are tested with stand-ins (a fake translator and a mock Cashfree API), not live. Do one real order in Cashfree **sandbox** and one real Google translation before launch.
 
 ## Scripts
 

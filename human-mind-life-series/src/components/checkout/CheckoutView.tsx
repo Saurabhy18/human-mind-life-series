@@ -14,7 +14,7 @@ import { PurchaseBuilder } from "./PurchaseBuilder";
 
 /**
  * Checkout page body (server): the package builder with the payment method that is configured
- * (Razorpay, the opt-in manual UPI flow, or none = closed). Rendered per request, so payment
+ * (Cashfree, the opt-in manual UPI flow, or none = closed). Rendered per request, so payment
  * settings, book files and the QR file are always current.
  */
 export async function CheckoutView({ packageId, books, lang, backHref }: { packageId: PackageId; books: string[]; lang: string | null; backHref: string }) {

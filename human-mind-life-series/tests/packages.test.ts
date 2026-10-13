@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getReq, jsonReq, mockRazorpay, ORIGIN, pngBytes, signWebhook, webhookBody, writeSourceBook } from "./support/helpers";
+import { getReq, jsonReq, mockCashfree, ORIGIN, pngBytes, signWebhook, webhookBody, WEBHOOK_TS, writeSourceBook } from "./support/helpers";
 import { drainWorker } from "./support/orders";
 
 // Volumes 1, 2 and 4 have an English source PDF; 3 and 5 do not, so they can't be ordered until their PDFs are added (see the end of "Bundle delivery").
@@ -9,14 +9,14 @@ const V3 = "ancient-wisdom-for-the-modern-mind";
 const V4 = "volume-4";
 const V5 = "a-healthy-sex-life-at-any-age";
 
-let rzp: ReturnType<typeof mockRazorpay>;
+let cf: ReturnType<typeof mockCashfree>;
 beforeAll(async () => {
   await writeSourceBook(V1);
   await writeSourceBook(V2);
   await writeSourceBook(V4);
-  rzp = mockRazorpay();
+  cf = mockCashfree();
 });
-afterAll(() => rzp.restore());
+afterAll(() => cf.restore());
 
 const pick = (...pairs: [string, string][]) => pairs.map(([bookId, language]) => ({ bookId, language }));
 const customer = () => ({ customerName: "Meera Iyer", customerEmail: `meera+${Math.random().toString(36).slice(2)}@example.com`, consent: true });
@@ -306,7 +306,7 @@ describe("Download authorization per ebook", () => {
   });
 });
 
-describe("Razorpay checkout for bundles", () => {
+describe("Cashfree checkout for bundles", () => {
   async function gatewayBundle() {
     const r = await placeOrder("three_book_bundle", pick([V1, "en"], [V2, "en"], [V4, "en"]));
     const create = await import("@/app/api/payment/create/route");
@@ -315,24 +315,30 @@ describe("Razorpay checkout for bundles", () => {
   }
   async function sendWebhook(body: string) {
     const { POST } = await import("@/app/api/payment/webhook/route");
-    const res = await POST(new Request(`${ORIGIN}/api/payment/webhook`, { method: "POST", body, headers: { "content-type": "application/json", "x-razorpay-signature": signWebhook(body) } }));
+    const res = await POST(
+      new Request(`${ORIGIN}/api/payment/webhook`, {
+        method: "POST",
+        body,
+        headers: { "content-type": "application/json", "x-webhook-signature": signWebhook(body), "x-webhook-timestamp": WEBHOOK_TS },
+      }),
+    );
     return (await res.json()).message as string;
   }
 
-  it("the gateway is asked for the bundle price (₹649 = 64900 paise)", async () => {
+  it("the gateway is asked for the bundle price (₹649)", async () => {
     const o = await gatewayBundle();
-    expect(o.checkout).toMatchObject({ amount: 64900, currency: "INR" });
-    expect(rzp.orders.get(o.checkout.providerOrderId)).toMatchObject({ amount: 64900, receipt: o.ref });
+    expect(o.checkout).toMatchObject({ amount: 649, currency: "INR" });
+    expect(cf.orders.get(o.ref)).toMatchObject({ order_amount: 649, order_id: o.ref });
   });
 
   it("paying the single-ebook price for a bundle does NOT mark it paid; the full price does", async () => {
     const o = await gatewayBundle();
     const { getOrderByRef } = await import("@/lib/server/orders");
-    expect(await sendWebhook(webhookBody("payment.captured", rzp.pay(o.checkout.providerOrderId, 29900)))).toBe("Amount mismatch");
+    expect(await sendWebhook(webhookBody("PAYMENT_SUCCESS_WEBHOOK", cf.pay(o.ref, 299), cf.orders.get(o.ref)!))).toBe("Amount mismatch");
     expect(getOrderByRef(o.ref)!.payment_status).toBe("PENDING");
-    const full = rzp.pay(o.checkout.providerOrderId);
-    expect(await sendWebhook(webhookBody("payment.captured", full))).toBe("Payment recorded");
-    expect(await sendWebhook(webhookBody("payment.captured", full))).toBe("Duplicate ignored");
+    const full = cf.pay(o.ref);
+    expect(await sendWebhook(webhookBody("PAYMENT_SUCCESS_WEBHOOK", full, cf.orders.get(o.ref)!))).toBe("Payment recorded");
+    expect(await sendWebhook(webhookBody("PAYMENT_SUCCESS_WEBHOOK", full, cf.orders.get(o.ref)!))).toBe("Duplicate ignored");
     expect(getOrderByRef(o.ref)!.payment_status).toBe("PAID");
   });
 });

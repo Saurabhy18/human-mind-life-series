@@ -28,12 +28,12 @@ const projectId = str("GOOGLE_CLOUD_PROJECT_ID");
 
 export type TranslationProvider = "google" | "fake" | "none";
 export type TranslationStrategy = "document" | "text";
-/** none = checkout closed (no payments taken). razorpay = gateway checkout. manual_upi = the older UPI QR + admin verification flow (opt-in only). */
-export type PaymentProvider = "none" | "manual_upi" | "razorpay";
+/** none = checkout closed (no payments taken). cashfree = gateway checkout. manual_upi = the older UPI QR + admin verification flow (opt-in only). */
+export type PaymentProvider = "none" | "manual_upi" | "cashfree";
 
 function paymentProvider(): PaymentProvider {
   const v = str("PAYMENT_PROVIDER", "none");
-  return v === "razorpay" || v === "manual_upi" ? v : "none";
+  return v === "cashfree" || v === "manual_upi" ? v : "none";
 }
 
 function translationProvider(): TranslationProvider {
@@ -73,15 +73,23 @@ export const ENV = {
   },
 
   // ------------------------------------------------------------- Payments --
-  payment: {
-    // Default "none": the site takes no payments until a provider is deliberately configured.
-    provider: paymentProvider(),
-    razorpayKeyId: str("RAZORPAY_KEY_ID"),
-    razorpayKeySecret: str("RAZORPAY_KEY_SECRET"),
-    razorpayWebhookSecret: str("RAZORPAY_WEBHOOK_SECRET"),
-    // Overridable only outside production (tests use a local mock); production always talks to Razorpay itself.
-    razorpayApiBase: isProd ? "https://api.razorpay.com" : str("RAZORPAY_API_BASE", "https://api.razorpay.com"),
-  },
+  // Default "none": the site takes no payments until a provider is deliberately configured.
+  payment: (() => {
+    // Live Cashfree is used ONLY when NODE_ENV=production AND CASHFREE_ENV=production.
+    // Everywhere else (local, preview, tests) we are pinned to sandbox, so no real money can move.
+    const cashfreeEnv: "sandbox" | "production" =
+      str("CASHFREE_ENV", isProd ? "production" : "sandbox").toLowerCase() === "production" && isProd ? "production" : "sandbox";
+    const defaultApiBase = cashfreeEnv === "production" ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg";
+    return {
+      provider: paymentProvider(),
+      cashfreeEnv,
+      cashfreeClientId: str("CASHFREE_CLIENT_ID"),
+      cashfreeSecretKey: str("CASHFREE_SECRET_KEY"),
+      cashfreeApiVersion: str("CASHFREE_API_VERSION", "2023-08-01"),
+      // Overridable only outside production (tests use a local mock); production always talks to Cashfree itself.
+      cashfreeApiBase: isProd ? defaultApiBase : str("CASHFREE_API_BASE", defaultApiBase),
+    };
+  })(),
 
   // ---------------------------------------------------- Storage & download --
   storage: {

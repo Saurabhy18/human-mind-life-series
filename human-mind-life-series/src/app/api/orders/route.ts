@@ -103,7 +103,7 @@ async function createGatewayOrder(req: Request, ip: string) {
       })(),
       ip_hash: hashIp(ip),
       user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
-      payment_provider: "razorpay",
+      payment_provider: "cashfree",
       customer_id: customerId,
     });
     const order = getOrder(id)!;

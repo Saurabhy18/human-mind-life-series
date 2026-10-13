@@ -2,7 +2,7 @@
  * DISPLAY CURRENCIES — the currencies a visitor may view prices in.
  *
  * The store is priced and CHARGED in INR (see src/config/packages.ts and the
- * Razorpay / UPI payment flow). These currencies are DISPLAY-ONLY: prices are
+ * Cashfree / UPI payment flow). These currencies are DISPLAY-ONLY: prices are
  * converted with live exchange rates for reference, but every customer still
  * pays the INR amount. To offer another display currency, add it here — its
  * code must be a valid ISO 4217 code the rates API (and Intl) understands.

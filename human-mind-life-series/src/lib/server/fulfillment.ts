@@ -52,7 +52,7 @@ async function languageNames(): Promise<(code: string) => string> {
 
 export type PaymentConfirmation = {
   orderId: number;
-  provider: "manual_upi" | "razorpay";
+  provider: "manual_upi" | "cashfree";
   /** Unique per real payment event (gateway event id / payment id / admin verification). Makes processing idempotent. */
   idempotencyKey: string;
   amount: number;

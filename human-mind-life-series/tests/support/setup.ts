@@ -1,7 +1,7 @@
 /**
  * Test environment: a throwaway storage folder per test file, the FAKE
- * translator (no Google credentials, no cost), Razorpay in test mode with a
- * known webhook secret (its API is mocked per test), and emails captured.
+ * translator (no Google credentials, no cost), Cashfree in sandbox mode with
+ * test credentials (its API is mocked per test), and emails captured.
  * Runs before any app module is imported, so env.server.ts picks these up.
  */
 import fs from "node:fs";
@@ -21,11 +21,11 @@ Object.assign(process.env, {
   // Tiny parts so the document strategy's split/merge is exercised by small test books.
   DOC_TRANSLATION_PAGES_PER_REQUEST: "2",
   TRANSLATION_MAX_ATTEMPTS: "3",
-  PAYMENT_PROVIDER: "razorpay",
-  RAZORPAY_KEY_ID: "rzp_test_key",
-  RAZORPAY_KEY_SECRET: "rzp_test_secret",
-  RAZORPAY_WEBHOOK_SECRET: "whsec_test_secret",
-  RAZORPAY_API_BASE: "https://rzp.test",
+  PAYMENT_PROVIDER: "cashfree",
+  CASHFREE_ENV: "sandbox",
+  CASHFREE_CLIENT_ID: "cf_test_client",
+  CASHFREE_SECRET_KEY: "cf_test_secret",
+  CASHFREE_API_BASE: "https://cf.test/pg",
   EMAIL_TRANSPORT: "json",
   EMAIL_FROM: "Books <books@example.com>",
   FRONTEND_URL: "https://shop.example.com",

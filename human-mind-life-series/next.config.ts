@@ -2,11 +2,11 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const isProd = process.env.NODE_ENV === "production";
-// Razorpay's hosted checkout is only allowed when it is actually switched on.
-const razorpay = process.env.PAYMENT_PROVIDER === "razorpay";
-const rzpScript = razorpay ? " https://checkout.razorpay.com" : "";
-const rzpConnect = razorpay ? " https://api.razorpay.com https://lumberjack.razorpay.com" : "";
-const rzpFrame = razorpay ? " https://api.razorpay.com https://checkout.razorpay.com" : "";
+// Cashfree's hosted checkout (JS SDK + modal iframe) is only allowed when it is actually switched on.
+const cashfree = process.env.PAYMENT_PROVIDER === "cashfree";
+const cfScript = cashfree ? " https://sdk.cashfree.com https://*.cashfree.com" : "";
+const cfConnect = cashfree ? " https://*.cashfree.com" : "";
+const cfFrame = cashfree ? " https://*.cashfree.com" : "";
 // Signed download URLs may point at a private Google Cloud Storage bucket.
 const gcsConnect = process.env.BOOK_STORAGE_BUCKET ? " https://storage.googleapis.com" : "";
 
@@ -16,12 +16,12 @@ const gcsConnect = process.env.BOOK_STORAGE_BUCKET ? " https://storage.googleapi
  */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://www.googletagmanager.com https://www.google-analytics.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://connect.facebook.net${rzpScript}`,
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://www.googletagmanager.com https://www.google-analytics.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://connect.facebook.net${cfScript}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.doubleclick.net https://www.google.com https://www.googleadservices.com https://www.facebook.com https://connect.facebook.net${rzpConnect}${gcsConnect}`,
-  `frame-src https://www.googletagmanager.com https://td.doubleclick.net https://www.facebook.com${rzpFrame}`,
+  `connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.doubleclick.net https://www.google.com https://www.googleadservices.com https://www.facebook.com https://connect.facebook.net${cfConnect}${gcsConnect}`,
+  `frame-src https://www.googletagmanager.com https://td.doubleclick.net https://www.facebook.com${cfFrame}`,
   "frame-ancestors 'none'",
   "form-action 'self'",
   "base-uri 'self'",
@@ -34,7 +34,7 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: `camera=(), microphone=(), geolocation=(), payment=(${razorpay ? `self "https://api.razorpay.com"` : ""})` },
+  { key: "Permissions-Policy", value: `camera=(), microphone=(), geolocation=(), payment=(${cashfree ? `self "https://payments.cashfree.com" "https://payments-test.cashfree.com" "https://sandbox.cashfree.com"` : ""})` },
   ...(isProd ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
 ];
 

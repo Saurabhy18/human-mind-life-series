@@ -1,46 +1,39 @@
 import "server-only";
 import crypto from "node:crypto";
 import { ENV } from "@/config/env.server";
-import { CONFIG } from "@/config/site.config";
 import { getDb } from "./db";
 import { logger, errorMessage } from "./logger";
-import { getOrder, getOrderItems, type Order } from "./orders";
+import { getOrder, type Order } from "./orders";
 import { markOrderPaid, markOrderPaymentFailed } from "./fulfillment";
 
 /**
  * Payment providers.
  *  - manual_upi (default): customer pays your UPI QR; YOU verify in the admin panel (server-side) → fulfillment.
- *  - razorpay: hosted checkout; the SIGNED WEBHOOK (plus an API re-check) is the only thing that marks an order paid.
- * The browser can never mark an order paid.
+ *  - cashfree: Cashfree hosted checkout; a SIGNED WEBHOOK (plus an API re-check) is the only thing that marks
+ *    an order paid. The browser can never mark an order paid.
  */
 
-const toPaise = (rupees: number) => Math.round(rupees * 100);
+/** Cashfree requires a customer phone. The gateway checkout collects only name + email, so a neutral
+ * placeholder is sent. (Change this flow if you start collecting the customer's real phone number.) */
+const PLACEHOLDER_PHONE = "9999999999";
 
-/**
- * Outside production only Razorpay TEST-mode keys (rzp_test_…) are accepted, so local development
- * and testing can never move real money. Live keys (rzp_live_…) work only when NODE_ENV=production.
- */
-export function razorpayKeyAllowed(keyId: string, isProd = ENV.isProd): boolean {
-  return isProd || keyId.startsWith("rzp_test_");
-}
+/** Amounts are compared in integer paise to avoid floating-point drift (Cashfree uses rupee decimals). */
+const paise = (rupees: number | string) => Math.round(Number(rupees) * 100);
+const sameAmount = (a: number | string, b: number | string) => paise(a) === paise(b);
 
-function razorpayConfigured() {
-  return (
-    ENV.payment.provider === "razorpay" &&
-    !!(ENV.payment.razorpayKeyId && ENV.payment.razorpayKeySecret && ENV.payment.razorpayWebhookSecret) &&
-    razorpayKeyAllowed(ENV.payment.razorpayKeyId)
-  );
+function cashfreeConfigured() {
+  return ENV.payment.provider === "cashfree" && !!(ENV.payment.cashfreeClientId && ENV.payment.cashfreeSecretKey);
 }
 
 export function gatewayEnabled(): boolean {
-  return razorpayConfigured();
+  return cashfreeConfigured();
 }
 
 export type CheckoutMode = "gateway" | "upi" | "closed";
 
 /**
  * What customers can do at checkout:
- *  - gateway: Razorpay is fully configured (PAYMENT_PROVIDER=razorpay + keys + webhook secret)
+ *  - gateway: Cashfree is fully configured (PAYMENT_PROVIDER=cashfree + client id + secret key)
  *  - upi:     the older manual UPI QR flow, only when PAYMENT_PROVIDER=manual_upi is set on purpose
  *  - closed:  anything else (the default) — no orders or payments are accepted
  */
@@ -49,71 +42,114 @@ export function checkoutMode(): CheckoutMode {
   return ENV.payment.provider === "manual_upi" ? "upi" : "closed";
 }
 
-async function razorpay<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-  const auth = Buffer.from(`${ENV.payment.razorpayKeyId}:${ENV.payment.razorpayKeySecret}`).toString("base64");
-  const res = await fetch(`${ENV.payment.razorpayApiBase}${path}`, {
+/** Thin Cashfree PG REST client. Never logs the secret; callers never receive it. */
+async function cashfree<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${ENV.payment.cashfreeApiBase}${path}`, {
     method,
-    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    headers: {
+      "x-client-id": ENV.payment.cashfreeClientId,
+      "x-client-secret": ENV.payment.cashfreeSecretKey,
+      "x-api-version": ENV.payment.cashfreeApiVersion,
+      "Content-Type": "application/json",
+    },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(15000),
   });
-  if (!res.ok) throw new Error(`Razorpay ${method} ${path} → HTTP ${res.status}`);
+  if (!res.ok) {
+    // Cashfree returns a JSON { message, code } body on errors; keep the message, never the credentials.
+    let detail = "";
+    try {
+      detail = ((await res.json()) as { message?: string }).message ?? "";
+    } catch {}
+    throw new Error(`Cashfree ${method} ${path} → HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
   return (await res.json()) as T;
 }
 
-type RzpOrder = { id: string; amount: number; amount_paid: number; currency: string; receipt: string; status: string };
-type RzpPayment = { id: string; order_id: string; amount: number; currency: string; status: string };
-
-export type CheckoutData = {
-  provider: "razorpay";
-  keyId: string;
-  providerOrderId: string;
-  amount: number;
-  currency: string;
-  name: string;
-  description: string;
-  prefill: { name: string; email: string };
+type CfOrder = {
+  cf_order_id?: string;
+  order_id: string;
+  order_amount: number;
+  order_currency: string;
+  order_status: string; // ACTIVE | PAID | EXPIRED | TERMINATED | ...
+  payment_session_id?: string;
+};
+type CfPayment = {
+  cf_payment_id: string | number;
+  order_id?: string;
+  payment_status: string; // SUCCESS | FAILED | PENDING | USER_DROPPED | ...
+  payment_amount: number;
+  payment_currency: string;
 };
 
-/** Creates (or reuses) the gateway order for one of our orders. Returns only what the checkout widget needs. */
+export type CheckoutData = {
+  provider: "cashfree";
+  /** Sandbox or production — the client SDK is initialised in this mode. */
+  mode: "sandbox" | "production";
+  /** Opaque, single-order session token used by the Cashfree JS SDK. Not a secret key. */
+  paymentSessionId: string;
+  orderRef: string;
+  amount: number;
+  currency: string;
+};
+
+/** Creates (or reuses) the Cashfree order for one of our orders. Returns only what the checkout SDK needs. */
 export async function createGatewayPayment(order: Order): Promise<CheckoutData> {
-  if (!razorpayConfigured()) throw new Error("Payment gateway is not configured");
-  let providerOrderId = order.provider_order_id;
-  if (!providerOrderId) {
-    const created = await razorpay<RzpOrder>("POST", "/v1/orders", {
-      amount: toPaise(order.amount),
-      currency: order.currency,
-      receipt: order.ref,
-      notes: {
-        ref: order.ref,
-        package: order.package_type,
-        books: getOrderItems(order.id)
-          .map((i) => `${i.book_slug}:${i.target_language}`)
-          .join(", ")
-          .slice(0, 250),
+  if (!cashfreeConfigured()) throw new Error("Payment gateway is not configured");
+
+  let cf: CfOrder;
+  if (order.provider_order_id) {
+    // Already created: fetch the live order to get a current payment session (and to be sure it is still payable).
+    cf = await cashfree<CfOrder>("GET", `/orders/${encodeURIComponent(order.provider_order_id)}`);
+  } else {
+    cf = await cashfree<CfOrder>("POST", "/orders", {
+      order_id: order.ref, // our own reference is the Cashfree order id (unique)
+      order_amount: order.amount, // RUPEES (Cashfree uses decimals, not paise)
+      order_currency: order.currency,
+      customer_details: {
+        customer_id: `cust_${order.customer_id ?? order.id}`,
+        customer_name: order.buyer_name,
+        customer_email: order.email,
+        customer_phone: PLACEHOLDER_PHONE,
       },
+      order_meta: {
+        return_url: `${ENV.frontendUrl}/order/status/${order.ref}`,
+        notify_url: `${ENV.frontendUrl}/api/payment/webhook`,
+      },
+      order_note: order.product_title.slice(0, 200),
+      order_tags: { ref: order.ref, package: order.package_type },
     });
-    if (created.amount !== toPaise(order.amount) || created.currency !== order.currency || created.receipt !== order.ref) {
+    if (cf.order_id !== order.ref || !sameAmount(cf.order_amount, order.amount) || cf.order_currency !== order.currency) {
       throw new Error("Gateway order does not match our order");
     }
-    providerOrderId = created.id;
-    getDb().prepare("UPDATE orders SET provider_order_id = ?, payment_provider = 'razorpay' WHERE id = ? AND provider_order_id IS NULL").run(providerOrderId, order.id);
+    getDb()
+      .prepare("UPDATE orders SET provider_order_id = ?, payment_provider = 'cashfree' WHERE id = ? AND provider_order_id IS NULL")
+      .run(order.ref, order.id);
   }
+
+  if (!cf.payment_session_id) throw new Error("Cashfree did not return a payment session");
   return {
-    provider: "razorpay",
-    keyId: ENV.payment.razorpayKeyId, // the PUBLIC key id — never the secret
-    providerOrderId,
-    amount: toPaise(order.amount),
+    provider: "cashfree",
+    mode: ENV.payment.cashfreeEnv,
+    paymentSessionId: cf.payment_session_id,
+    orderRef: order.ref,
+    amount: order.amount,
     currency: order.currency,
-    name: CONFIG.SITE_NAME,
-    description: order.product_title.slice(0, 250),
-    prefill: { name: order.buyer_name, email: order.email },
   };
 }
 
-export function verifyWebhookSignature(rawBody: string, signature: string | null, secret = ENV.payment.razorpayWebhookSecret): boolean {
-  if (!signature || !secret) return false;
-  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+/**
+ * Verifies a Cashfree webhook signature: Base64( HMAC-SHA256( secretKey, timestamp + rawBody ) ),
+ * computed over the EXACT raw request body. `timestamp` is the x-webhook-timestamp header.
+ */
+export function verifyWebhookSignature(
+  rawBody: string,
+  signature: string | null,
+  timestamp: string | null,
+  secret = ENV.payment.cashfreeSecretKey,
+): boolean {
+  if (!signature || !timestamp || !secret) return false;
+  const expected = crypto.createHmac("sha256", secret).update(timestamp + rawBody).digest("base64");
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -122,67 +158,63 @@ export function verifyWebhookSignature(rawBody: string, signature: string | null
 export type WebhookResult = { status: number; body: { ok: boolean; message: string } };
 
 /**
- * POST /api/payment/webhook (Razorpay). Steps:
- *  1. verify the HMAC signature over the raw body
- *  2. find our order via the gateway order id, and check the receipt (our order ref)
+ * POST /api/payment/webhook (Cashfree). Steps:
+ *  1. verify the HMAC signature over the raw body (+ the x-webhook-timestamp header)
+ *  2. find our order via the Cashfree order id (which is our order ref)
  *  3. check amount and currency
  *  4. check the payment status
- *  5. re-check with the Razorpay API (defence in depth)
- *  6. idempotent: the payment id is the idempotency key, so retries/duplicates are ignored
+ *  5. re-check with the Cashfree API (defence in depth)
+ *  6. idempotent: the cf_payment_id is the idempotency key, so retries/duplicates are ignored
  *  7. mark paid → fulfillment starts (queued, not run inside this request)
  */
-export async function handleRazorpayWebhook(rawBody: string, headers: Headers): Promise<WebhookResult> {
-  if (!razorpayConfigured()) return { status: 404, body: { ok: false, message: "Not enabled" } };
-  if (!verifyWebhookSignature(rawBody, headers.get("x-razorpay-signature"))) {
+export async function handleCashfreeWebhook(rawBody: string, headers: Headers): Promise<WebhookResult> {
+  if (!cashfreeConfigured()) return { status: 404, body: { ok: false, message: "Not enabled" } };
+  if (!verifyWebhookSignature(rawBody, headers.get("x-webhook-signature"), headers.get("x-webhook-timestamp"))) {
     logger.warn("Webhook rejected: invalid signature");
     return { status: 400, body: { ok: false, message: "Invalid signature" } };
   }
 
-  let evt: { event?: string; payload?: { payment?: { entity?: RzpPayment }; order?: { entity?: RzpOrder } } };
+  let evt: { type?: string; data?: { order?: Partial<CfOrder>; payment?: Partial<CfPayment> } };
   try {
     evt = JSON.parse(rawBody);
   } catch {
     return { status: 400, body: { ok: false, message: "Invalid JSON" } };
   }
-  const type = evt.event ?? "";
-  const payment = evt.payload?.payment?.entity;
-  const rzpOrder = evt.payload?.order?.entity;
-  const providerOrderId = payment?.order_id ?? rzpOrder?.id;
-  if (!["order.paid", "payment.captured", "payment.failed"].includes(type) || !providerOrderId) {
+  const type = evt.type ?? "";
+  const providerOrderId = evt.data?.order?.order_id;
+  const payment = evt.data?.payment;
+  const success = type === "PAYMENT_SUCCESS_WEBHOOK";
+  const failure = type === "PAYMENT_FAILED_WEBHOOK" || type === "PAYMENT_USER_DROPPED_WEBHOOK";
+  if ((!success && !failure) || !providerOrderId) {
     return { status: 200, body: { ok: true, message: "Ignored event" } };
   }
 
-  const row = getDb().prepare("SELECT id FROM orders WHERE payment_provider = 'razorpay' AND provider_order_id = ?").get(providerOrderId) as { id: number } | undefined;
+  const row = getDb()
+    .prepare("SELECT id FROM orders WHERE payment_provider = 'cashfree' AND provider_order_id = ?")
+    .get(providerOrderId) as { id: number } | undefined;
   const order = row ? getOrder(row.id) : undefined;
   if (!order) {
     logger.warn("Webhook for unknown order", { providerOrderId });
     return { status: 200, body: { ok: true, message: "Unknown order" } };
   }
-  if (rzpOrder && rzpOrder.receipt !== order.ref) {
-    logger.warn("Webhook receipt mismatch", { orderId: order.id });
-    return { status: 200, body: { ok: true, message: "Receipt mismatch" } };
-  }
 
-  if (type === "payment.failed") {
-    markOrderPaymentFailed(order.id, "Gateway reported a failed payment attempt");
+  if (failure) {
+    markOrderPaymentFailed(order.id, `Gateway reported a ${type === "PAYMENT_USER_DROPPED_WEBHOOK" ? "cancelled" : "failed"} payment attempt`);
     return { status: 200, body: { ok: true, message: "Payment failure recorded" } };
   }
 
-  const amount = payment?.amount ?? rzpOrder?.amount_paid;
-  const currency = payment?.currency ?? rzpOrder?.currency;
-  if (amount !== toPaise(order.amount) || currency !== order.currency) {
-    logger.error("Webhook amount/currency mismatch — NOT marking paid", { orderId: order.id, amount, currency });
-    return { status: 200, body: { ok: true, message: "Amount mismatch" } };
-  }
-  const paidOk = type === "payment.captured" ? payment?.status === "captured" : rzpOrder?.status === "paid" && (payment ? payment.status === "captured" : true);
-  if (!paidOk || !payment?.id) {
+  if (!payment || payment.payment_status !== "SUCCESS" || !payment.cf_payment_id) {
     return { status: 200, body: { ok: true, message: "Not a completed payment" } };
   }
+  if (!sameAmount(payment.payment_amount ?? 0, order.amount) || payment.payment_currency !== order.currency) {
+    logger.error("Webhook amount/currency mismatch — NOT marking paid", { orderId: order.id, amount: payment.payment_amount, currency: payment.payment_currency });
+    return { status: 200, body: { ok: true, message: "Amount mismatch" } };
+  }
 
-  // Defence in depth: confirm with the gateway's API, not only the webhook body.
+  // Defence in depth: confirm with the Cashfree API, not only the webhook body.
   try {
-    const live = await razorpay<RzpOrder>("GET", `/v1/orders/${encodeURIComponent(providerOrderId)}`);
-    if (live.status !== "paid" || live.amount_paid < toPaise(order.amount) || live.currency !== order.currency || live.receipt !== order.ref) {
+    const live = await cashfree<CfOrder>("GET", `/orders/${encodeURIComponent(providerOrderId)}`);
+    if (live.order_status !== "PAID" || !sameAmount(live.order_amount, order.amount) || live.order_currency !== order.currency || live.order_id !== order.ref) {
       logger.error("Gateway API does not confirm payment — NOT marking paid", { orderId: order.id });
       return { status: 200, body: { ok: true, message: "Not confirmed by gateway" } };
     }
@@ -194,11 +226,11 @@ export async function handleRazorpayWebhook(rawBody: string, headers: Headers): 
 
   const { duplicate } = await markOrderPaid({
     orderId: order.id,
-    provider: "razorpay",
-    idempotencyKey: `razorpay:payment:${payment.id}`,
+    provider: "cashfree",
+    idempotencyKey: `cashfree:payment:${payment.cf_payment_id}`,
     amount: order.amount,
     currency: order.currency,
-    providerPaymentId: payment.id,
+    providerPaymentId: String(payment.cf_payment_id),
     providerOrderId,
     rawEvent: rawBody.slice(0, 4000),
   });
@@ -210,19 +242,19 @@ export async function handleRazorpayWebhook(rawBody: string, headers: Headers): 
  * server) whether the order is paid. Never trusts what the browser says.
  */
 export async function syncGatewayPayment(order: Order): Promise<void> {
-  if (!razorpayConfigured() || order.payment_provider !== "razorpay" || !order.provider_order_id || order.payment_status === "PAID") return;
-  const live = await razorpay<RzpOrder>("GET", `/v1/orders/${encodeURIComponent(order.provider_order_id)}`);
-  if (live.status !== "paid" || live.amount_paid < toPaise(order.amount) || live.currency !== order.currency || live.receipt !== order.ref) return;
-  const payments = await razorpay<{ items: RzpPayment[] }>("GET", `/v1/orders/${encodeURIComponent(order.provider_order_id)}/payments`);
-  const captured = payments.items.find((p) => p.status === "captured" && p.amount === toPaise(order.amount) && p.currency === order.currency);
-  if (!captured) return;
+  if (!cashfreeConfigured() || order.payment_provider !== "cashfree" || !order.provider_order_id || order.payment_status === "PAID") return;
+  const live = await cashfree<CfOrder>("GET", `/orders/${encodeURIComponent(order.provider_order_id)}`);
+  if (live.order_status !== "PAID" || !sameAmount(live.order_amount, order.amount) || live.order_currency !== order.currency || live.order_id !== order.ref) return;
+  const payments = await cashfree<CfPayment[]>("GET", `/orders/${encodeURIComponent(order.provider_order_id)}/payments`);
+  const paid = payments.find((p) => p.payment_status === "SUCCESS" && sameAmount(p.payment_amount, order.amount) && p.payment_currency === order.currency);
+  if (!paid) return;
   await markOrderPaid({
     orderId: order.id,
-    provider: "razorpay",
-    idempotencyKey: `razorpay:payment:${captured.id}`,
+    provider: "cashfree",
+    idempotencyKey: `cashfree:payment:${paid.cf_payment_id}`,
     amount: order.amount,
     currency: order.currency,
-    providerPaymentId: captured.id,
+    providerPaymentId: String(paid.cf_payment_id),
     providerOrderId: order.provider_order_id,
   });
 }

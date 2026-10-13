@@ -62,8 +62,10 @@ export function getReq(url: string, headers: Record<string, string> = {}): Reque
   return new Request(`${ORIGIN}${url}`, { headers: { host: "shop.example.com", "x-forwarded-for": nextIp(), ...headers } });
 }
 
-export function signWebhook(body: string, secret = "whsec_test_secret"): string {
-  return crypto.createHmac("sha256", secret).update(body).digest("hex");
+/** Cashfree webhook signature: Base64( HMAC-SHA256( secret, timestamp + rawBody ) ). */
+export const WEBHOOK_TS = "1700000000";
+export function signWebhook(body: string, timestamp = WEBHOOK_TS, secret = "cf_test_secret"): string {
+  return crypto.createHmac("sha256", secret).update(timestamp + body).digest("base64");
 }
 
 /** A tiny but valid PNG (for UPI payment screenshots). */
@@ -73,38 +75,49 @@ export function pngBytes(): Uint8Array {
   );
 }
 
-type RzpOrder = { id: string; amount: number; amount_paid: number; currency: string; receipt: string; status: string };
+export type CfOrder = { cf_order_id: string; order_id: string; order_amount: number; order_currency: string; order_status: string; payment_session_id: string };
+export type CfPayment = { cf_payment_id: number; order_id: string; payment_status: string; payment_amount: number; payment_currency: string };
 
 /**
- * Mock of the Razorpay REST API (orders create/fetch, order payments).
- * Tests flip an order to "paid" to simulate the customer paying at the gateway.
+ * Mock of the Cashfree PG REST API (create order, get order, get order payments).
+ * Tests flip an order to "PAID" to simulate the customer paying at the gateway.
+ * The order id is OUR own order ref (we supply it when creating the Cashfree order).
  */
-export function mockRazorpay() {
-  const orders = new Map<string, RzpOrder>();
-  const payments = new Map<string, { id: string; order_id: string; amount: number; currency: string; status: string }[]>();
+export function mockCashfree() {
+  const orders = new Map<string, CfOrder>();
+  const payments = new Map<string, CfPayment[]>();
   let n = 0;
   let down = false;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (!url.startsWith("https://rzp.test")) return original(input, init);
+    if (!url.startsWith("https://cf.test")) return original(input, init);
     if (down) throw new Error("ECONNRESET");
-    const auth = new Headers(init?.headers).get("authorization");
-    if (auth !== `Basic ${Buffer.from("rzp_test_key:rzp_test_secret").toString("base64")}`) return new Response("unauthorized", { status: 401 });
+    const h = new Headers(init?.headers);
+    if (h.get("x-client-id") !== "cf_test_client" || h.get("x-client-secret") !== "cf_test_secret" || !h.get("x-api-version")) {
+      return new Response(JSON.stringify({ message: "authentication failed" }), { status: 401 });
+    }
     const u = new URL(url);
-    if (init?.method === "POST" && u.pathname === "/v1/orders") {
+    if (init?.method === "POST" && u.pathname === "/pg/orders") {
       const body = JSON.parse(String(init.body));
-      const o: RzpOrder = { id: `order_T${++n}`, amount: body.amount, amount_paid: 0, currency: body.currency, receipt: body.receipt, status: "created" };
-      orders.set(o.id, o);
+      const o: CfOrder = {
+        cf_order_id: `cf_${++n}`,
+        order_id: body.order_id,
+        order_amount: body.order_amount,
+        order_currency: body.order_currency,
+        order_status: "ACTIVE",
+        payment_session_id: `session_${body.order_id}_${n}`,
+      };
+      orders.set(o.order_id, o);
       return Response.json(o);
     }
-    const m = u.pathname.match(/^\/v1\/orders\/([^/]+)(\/payments)?$/);
+    const m = u.pathname.match(/^\/pg\/orders\/([^/]+)(\/payments)?$/);
     if (m) {
       const o = orders.get(decodeURIComponent(m[1]));
-      if (!o) return new Response("not found", { status: 404 });
-      return m[2] ? Response.json({ items: payments.get(o.id) ?? [] }) : Response.json(o);
+      if (!o) return new Response(JSON.stringify({ message: "order not found" }), { status: 404 });
+      return m[2] ? Response.json(payments.get(o.order_id) ?? []) : Response.json(o);
     }
-    return new Response("not found", { status: 404 });
+    return new Response(JSON.stringify({ message: "not found" }), { status: 404 });
   }) as typeof fetch;
 
   return {
@@ -113,14 +126,11 @@ export function mockRazorpay() {
       down = v;
     },
     /** Simulates a successful payment at the gateway; returns the payment entity. */
-    pay(orderId: string, amount?: number) {
-      const o = orders.get(orderId)!;
-      const p = { id: `pay_T${++n}`, order_id: o.id, amount: amount ?? o.amount, currency: o.currency, status: "captured" };
-      if (p.amount === o.amount) {
-        o.status = "paid";
-        o.amount_paid = o.amount;
-      }
-      payments.set(o.id, [...(payments.get(o.id) ?? []), p]);
+    pay(orderRef: string, amount?: number) {
+      const o = orders.get(orderRef)!;
+      const p: CfPayment = { cf_payment_id: ++n, order_id: o.order_id, payment_status: "SUCCESS", payment_amount: amount ?? o.order_amount, payment_currency: o.order_currency };
+      if (p.payment_amount === o.order_amount) o.order_status = "PAID";
+      payments.set(o.order_id, [...(payments.get(o.order_id) ?? []), p]);
       return p;
     },
     restore() {
@@ -129,9 +139,14 @@ export function mockRazorpay() {
   };
 }
 
-export function webhookBody(event: string, payment: { id: string; order_id: string; amount: number; currency: string; status: string }, order?: RzpOrder) {
+/** Builds a Cashfree webhook body (type + { data: { order, payment } }). */
+export function webhookBody(type: string, payment: CfPayment, order: Pick<CfOrder, "order_id" | "order_amount" | "order_currency">) {
   return JSON.stringify({
-    event,
-    payload: { payment: { entity: payment }, ...(order ? { order: { entity: order } } : {}) },
+    type,
+    data: {
+      order: { order_id: order.order_id, order_amount: order.order_amount, order_currency: order.order_currency },
+      payment,
+    },
+    event_time: new Date().toISOString(),
   });
 }

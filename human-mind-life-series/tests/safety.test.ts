@@ -25,27 +25,26 @@ describe("Development / test safety", () => {
     expect(env.ENV.translation.provider).toBe("none");
   });
 
-  it("outside production only Razorpay TEST keys are accepted (no real money locally)", async () => {
-    const { pay } = await loadWith({ RAZORPAY_KEY_ID: "rzp_live_REALKEY" });
-    expect(pay.gatewayEnabled()).toBe(false);
-    expect(pay.razorpayKeyAllowed("rzp_live_x", false)).toBe(false);
-    expect(pay.razorpayKeyAllowed("rzp_test_x", false)).toBe(true);
-    expect(pay.razorpayKeyAllowed("rzp_live_x", true)).toBe(true);
+  it("outside production Cashfree is pinned to SANDBOX (no real money locally)", async () => {
+    // Even if someone asks for production, it is downgraded to sandbox unless NODE_ENV=production too.
+    const { env } = await loadWith({ CASHFREE_ENV: "production" });
+    expect(env.ENV.payment.cashfreeEnv).toBe("sandbox");
   });
 
-  it("test keys enable the gateway in development", async () => {
-    const { pay } = await loadWith({ RAZORPAY_KEY_ID: "rzp_test_key" });
+  it("configured credentials enable the gateway in development", async () => {
+    const { pay } = await loadWith({ CASHFREE_CLIENT_ID: "cf_test_client", CASHFREE_SECRET_KEY: "cf_test_secret" });
     expect(pay.gatewayEnabled()).toBe(true);
   });
 
-  it("the gateway stays off when any Razorpay setting is missing", async () => {
-    const { pay } = await loadWith({ RAZORPAY_WEBHOOK_SECRET: "" });
+  it("the gateway stays off when any Cashfree setting is missing", async () => {
+    const { pay } = await loadWith({ CASHFREE_SECRET_KEY: "" });
     expect(pay.gatewayEnabled()).toBe(false);
   });
 
-  it("production always talks to the real Razorpay API (address cannot be redirected)", async () => {
-    const { env } = await loadWith({ NODE_ENV: "production", RAZORPAY_API_BASE: "https://evil.example" });
-    expect(env.ENV.payment.razorpayApiBase).toBe("https://api.razorpay.com");
+  it("production talks to the real Cashfree API (address cannot be redirected)", async () => {
+    const { env } = await loadWith({ NODE_ENV: "production", CASHFREE_ENV: "production", CASHFREE_API_BASE: "https://evil.example" });
+    expect(env.ENV.payment.cashfreeEnv).toBe("production");
+    expect(env.ENV.payment.cashfreeApiBase).toBe("https://api.cashfree.com/pg");
   });
 
   it("on Hostinger, private data is stored outside the folder that every deployment replaces", async () => {

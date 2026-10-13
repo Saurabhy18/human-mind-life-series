@@ -13,6 +13,7 @@
     "setup-admin": "node scripts/setup-admin.mjs"
   },
   "dependencies": {
+    "@cashfreepayments/cashfree-js": "^1.0.7",
     "@google-cloud/storage": "^8.2.0",
     "@google-cloud/translate": "^10.1.1",
     "jose": "^6.2.12",

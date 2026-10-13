@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { handleRazorpayWebhook } from "@/lib/server/paymentService";
+import { handleCashfreeWebhook } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const raw = await req.text();
   if (raw.length > 256 * 1024) return NextResponse.json({ ok: false, message: "Too large" }, { status: 413 });
   try {
-    const res = await handleRazorpayWebhook(raw, req.headers);
+    const res = await handleCashfreeWebhook(raw, req.headers);
     return NextResponse.json(res.body, { status: res.status });
   } catch (err) {
     logger.error("Webhook processing error", { error: errorMessage(err) });

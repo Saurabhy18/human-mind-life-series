@@ -22,10 +22,10 @@ export default async function AdminSetupPage() {
       ok: mode !== "closed",
       hint:
         mode === "gateway"
-          ? "Razorpay checkout is on."
+          ? "Cashfree checkout is on."
           : mode === "upi"
             ? "Manual UPI checkout is on (PAYMENT_PROVIDER=manual_upi)."
-            : "Closed — no orders or payments are accepted. After Razorpay approves your account, set PAYMENT_PROVIDER=razorpay and the Razorpay keys on the server (README §9.3), then rebuild.",
+            : "Closed — no orders or payments are accepted. After your Cashfree account is approved, set PAYMENT_PROVIDER=cashfree and the Cashfree credentials on the server (README §9.3), then rebuild.",
     },
     {
       key: "Private storage (STORAGE_DIR)",
