@@ -1,11 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { NextResponse } from "next/server";
 import { CONFIG } from "@/config/site.config";
+import { ENV } from "@/config/env.server";
 import { getFreeBook } from "@/lib/products";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
 import { consumeDownloadToken, refundDownload } from "@/lib/server/free-requests";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp } from "@/lib/server/request";
+import { getStorage } from "@/lib/server/storageService";
 
 export const runtime = "nodejs";
 
@@ -40,8 +43,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
   }
 
   try {
-    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
     const fileName = `${book.label.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}.pdf`;
+    const storageKey = `${book.slug}.pdf`;
+
+    if (ENV.storage.driver === "supabase") {
+      try {
+        const url = await getStorage().signedUrl(storageKey, {
+          ttlSeconds: CONFIG.FREE_DOWNLOAD_LINK_HOURS * 3600,
+          downloadName: fileName,
+        });
+        return NextResponse.redirect(url, 302);
+      } catch {
+        // Fall through to local file if signed URL generation fails
+      }
+    }
+
+    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
     return new Response(new Uint8Array(data), {
       headers: {
         ...PRIVATE_HEADERS,

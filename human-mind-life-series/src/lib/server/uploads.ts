@@ -2,6 +2,8 @@ import "server-only";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ENV } from "@/config/env.server";
+import { createSupabaseAdminClient } from "@/lib/supabase";
 import { SCREENSHOT_DIR } from "./db";
 
 export const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -25,6 +27,11 @@ export type SavedFile = { fileName: string; mime: string };
 
 export class UploadError extends Error {}
 
+export function screenshotStorageKey(fileName: string): string {
+  if (!/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(fileName)) throw new Error("Invalid file name");
+  return `payment-screenshots/${fileName}`;
+}
+
 export async function saveScreenshot(file: File): Promise<SavedFile> {
   if (file.size === 0) throw new UploadError("Please attach your payment screenshot.");
   if (file.size > MAX_SCREENSHOT_BYTES) throw new UploadError("The screenshot is too large. Maximum size is 5 MB.");
@@ -35,6 +42,18 @@ export async function saveScreenshot(file: File): Promise<SavedFile> {
 
   // Random, unguessable file name — the original name is never used on disk.
   const fileName = `${crypto.randomUUID()}.${type.ext}`;
+
+  if (ENV.storage.driver === "supabase") {
+    const client = createSupabaseAdminClient();
+    if (!client) throw new UploadError("Supabase storage is not configured.");
+    const { error } = await client.storage.from(ENV.storage.bucket || "site-files").upload(screenshotStorageKey(fileName), buf, {
+      contentType: type.mime,
+      upsert: false,
+    });
+    if (error) throw new UploadError(`Failed to save payment screenshot: ${error.message}`);
+    return { fileName, mime: type.mime };
+  }
+
   // Recreate the folder if it was removed (e.g. storage moved or restored from backup).
   await fs.mkdir(SCREENSHOT_DIR, { recursive: true });
   await fs.writeFile(path.join(/*turbopackIgnore: true*/ SCREENSHOT_DIR, fileName), buf, { flag: "wx" });
@@ -42,6 +61,13 @@ export async function saveScreenshot(file: File): Promise<SavedFile> {
 }
 
 export async function deleteScreenshot(fileName: string): Promise<void> {
+  if (ENV.storage.driver === "supabase") {
+    const client = createSupabaseAdminClient();
+    if (!client) return;
+    const { error } = await client.storage.from(ENV.storage.bucket || "site-files").remove([screenshotStorageKey(fileName)]);
+    if (error) throw new Error(error.message);
+    return;
+  }
   await fs.rm(resolveScreenshotPath(fileName), { force: true });
 }
 
