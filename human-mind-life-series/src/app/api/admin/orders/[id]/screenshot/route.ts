@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
+import { ENV } from "@/config/env.server";
 import { isAdmin } from "@/lib/server/auth";
 import { getOrder } from "@/lib/server/orders";
-import { resolveScreenshotPath } from "@/lib/server/uploads";
+import { getStorage } from "@/lib/server/storageService";
+import { resolveScreenshotPath, screenshotStorageKey } from "@/lib/server/uploads";
 
 export const runtime = "nodejs";
 
@@ -14,8 +16,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!order) return new Response("Not found", { status: 404 });
 
   try {
-    const data = await fs.readFile(resolveScreenshotPath(order.screenshot_file));
-    return new Response(new Uint8Array(data), {
+    const key = screenshotStorageKey(order.screenshot_file);
+    const data = ENV.storage.driver === "supabase" ? new Uint8Array(await getStorage().get(key)) : new Uint8Array(await fs.readFile(resolveScreenshotPath(order.screenshot_file)));
+    return new Response(data, {
       headers: {
         "Content-Type": order.screenshot_mime,
         "Content-Disposition": `inline; filename="${order.ref}-payment.${order.screenshot_file.split(".").pop()}"`,

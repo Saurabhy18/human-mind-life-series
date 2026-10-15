@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { ENV } from "@/config/env.server";
+import { createSupabaseAdminClient } from "@/lib/supabase";
 import { STORAGE_DIR } from "./db";
 
 /**
@@ -10,8 +11,9 @@ import { STORAGE_DIR } from "./db";
  * publicly addressable: files are reached only through short-lived signed
  * URLs issued after payment + authorization checks.
  *
- *  - local: files under STORAGE_DIR/files, URLs signed with HMAC (served by /api/files).
- *  - gcs:   a PRIVATE Google Cloud Storage bucket (BOOK_STORAGE_BUCKET), V4 signed URLs.
+ *  - local:    files under STORAGE_DIR/files, URLs signed with HMAC (served by /api/files).
+ *  - gcs:      a PRIVATE Google Cloud Storage bucket (BOOK_STORAGE_BUCKET), V4 signed URLs.
+ *  - supabase: files in a private Supabase Storage bucket, signed URL returned by the bucket API.
  */
 export interface StorageService {
   put(key: string, data: Uint8Array, contentType: string): Promise<void>;
@@ -121,8 +123,61 @@ class GcsStorage implements StorageService {
   }
 }
 
+class SupabaseStorage implements StorageService {
+  private bucketName() {
+    if (!ENV.storage.bucket) throw new Error("Set SUPABASE_STORAGE_BUCKET or BOOK_STORAGE_BUCKET to the Supabase Storage bucket name.");
+    return ENV.storage.bucket;
+  }
+
+  private client() {
+    const client = createSupabaseAdminClient();
+    if (!client) throw new Error("Supabase storage is not configured. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and the bucket name.");
+    return client;
+  }
+
+  async put(key: string, data: Uint8Array, contentType: string) {
+    checkKey(key);
+    const { error } = await this.client().storage.from(this.bucketName()).upload(key, new Blob([data as unknown as BlobPart], { type: contentType }), {
+      contentType,
+      upsert: true,
+      cacheControl: "3600",
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async get(key: string) {
+    checkKey(key);
+    const { data, error } = await this.client().storage.from(this.bucketName()).download(key);
+    if (error || !data) throw new Error(error?.message || "File not found in Supabase Storage.");
+    return new Uint8Array(await data.arrayBuffer());
+  }
+
+  async exists(key: string) {
+    checkKey(key);
+    try {
+      const { data, error } = await this.client().storage.from(this.bucketName()).download(key);
+      return !error && !!data;
+    } catch {
+      return false;
+    }
+  }
+
+  async signedUrl(key: string, { ttlSeconds, downloadName }: { ttlSeconds: number; downloadName: string }) {
+    checkKey(key);
+    const { data, error } = await this.client().storage.from(this.bucketName()).createSignedUrl(key, ttlSeconds, {
+      download: downloadName,
+    });
+    if (error || !data) throw new Error(error?.message || "Could not create a signed URL for this file.");
+    return data.signedUrl;
+  }
+}
+
 let instance: StorageService | null = null;
 export function getStorage(): StorageService {
-  if (!instance) instance = ENV.storage.driver === "gcs" ? new GcsStorage() : new LocalStorage();
+  if (!instance) {
+    if (ENV.storage.driver === "supabase") instance = new SupabaseStorage();
+    else if (ENV.storage.driver === "gcs") instance = new GcsStorage();
+    else instance = new LocalStorage();
+  }
   return instance;
 }
