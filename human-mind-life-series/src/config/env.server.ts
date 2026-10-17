@@ -32,9 +32,10 @@ export type TranslationStrategy = "document" | "text";
 export type PaymentProvider = "none" | "manual_upi" | "cashfree";
 
 function paymentProvider(): PaymentProvider {
-  const v = str("PAYMENT_PROVIDER", "none");
-  return v === "cashfree" || v === "manual_upi" ? v : "none";
+  const v = str("PAYMENT_PROVIDER", "manual_upi");
+  return v === "cashfree" || v === "manual_upi" ? v : "manual_upi";
 }
+
 
 function translationProvider(): TranslationProvider {
   const v = str("TRANSLATION_PROVIDER", projectId ? "google" : "none");

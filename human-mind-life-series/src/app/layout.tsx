@@ -3,6 +3,7 @@ import { Fraunces, Inter } from "next/font/google";
 import { CONFIG, SITE_URL } from "@/config/site.config";
 import { Analytics } from "@/components/tracking/Analytics";
 import { CurrencyProvider } from "@/components/currency/CurrencyContext";
+import { AuthProvider } from "@/components/auth/AuthContext";
 import { ALL_BOOKS } from "@/lib/products";
 import "./globals.css";
 
@@ -34,9 +35,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en-IN" className={`${fraunces.variable} ${inter.variable}`}>
+    <html lang="en-IN" data-scroll-behavior="smooth" className={`${fraunces.variable} ${inter.variable}`}>
       <body className="min-h-dvh">
-        <CurrencyProvider>{children}</CurrencyProvider>
+        <AuthProvider>
+          <CurrencyProvider>{children}</CurrencyProvider>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

@@ -1,5 +1,13 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import dns from "node:dns";
+
+// Prefer IPv4 first to prevent network timeouts on networks/ISPs with broken or unreachable IPv6 routes
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Ignore in environments where setDefaultResultOrder is unavailable
+}
 
 const isProd = process.env.NODE_ENV === "production";
 // Cashfree's hosted checkout (JS SDK + modal iframe) is only allowed when it is actually switched on.

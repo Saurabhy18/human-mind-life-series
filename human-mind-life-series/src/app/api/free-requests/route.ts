@@ -3,7 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { CONFIG } from "@/config/site.config";
 import { ENV } from "@/config/env.server";
-import { getFreeBook } from "@/lib/products";
+import { getDbFreeBook } from "@/lib/server/books";
 import { fieldErrors, freeRequestSchema, sanitizeTracking } from "@/lib/validation";
 import { createFreeRequest } from "@/lib/server/free-requests";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
@@ -41,11 +41,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return fail(422, "Please correct the highlighted fields.", fieldErrors(parsed.error));
   const data = parsed.data;
 
-  const book = getFreeBook(data.book);
+  const book = getDbFreeBook(data.book);
   if (!book) return fail(422, "This book is not available as a free book.");
 
   // A personal download link is only issued when instant delivery is switched on AND the private PDF exists (locally or in Supabase bucket).
-  const pdfExists = fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`)) || ENV.storage.driver === "supabase";
+  const pdfFilename = book.pdfFilename || `${book.slug}.pdf`;
+  const pdfExists = fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, pdfFilename)) || ENV.storage.driver === "supabase";
   const instant = CONFIG.FREE_BOOK_INSTANT_DOWNLOAD && pdfExists;
 
   let tracking: Record<string, string> | null = null;

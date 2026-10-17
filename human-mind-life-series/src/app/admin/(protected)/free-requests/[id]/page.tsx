@@ -11,6 +11,7 @@ import { mailtoLink, whatsappLink } from "@/lib/contact";
 import { formatDate } from "@/components/admin/StatusBadge";
 import { FreeStatusBadge } from "@/components/admin/FreeStatusBadge";
 import { updateFreeStatusAction } from "../../../actions";
+import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -21,7 +22,8 @@ export default async function AdminFreeRequestPage({ params }: Props) {
   if (!request) notFound();
 
   const utm = request.utm_json ? (JSON.parse(request.utm_json) as Record<string, string>) : null;
-  const pdfAvailable = fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${request.book_slug}.pdf`));
+  await ensureBookSource(request.book_slug);
+  const pdfAvailable = Boolean(getBookSource(request.book_slug));
   const message = `Hello ${request.name},\n\nThank you for requesting your free copy of "${request.book_title}" (request ${request.ref}). Please find the book attached.\n\nThis copy is for your personal use only. Please do not share or distribute it.\n\nHappy reading!\n${CONFIG.SITE_NAME}`;
   const mailDeliver = mailtoLink(request.email, `Your free book: ${request.book_title} (${request.ref})`, message);
   const waDeliver = request.whatsapp ? whatsappLink(message, request.whatsapp) : null;

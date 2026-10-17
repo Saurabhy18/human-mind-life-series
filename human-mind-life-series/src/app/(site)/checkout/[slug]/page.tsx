@@ -6,6 +6,8 @@ import { BUNDLE_SLUG, bundleEnabled, getFreeBook, getProduct } from "@/lib/produ
 import { pageMetadata } from "@/lib/seo";
 import { CheckoutView } from "@/components/checkout/CheckoutView";
 
+import { getDbProduct, getDbFreeBook } from "@/lib/server/books";
+
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ lang?: string }> };
 
 // Rendered per request so payment settings (UPI vs gateway) and the QR file are always current — no rebuild needed.
@@ -14,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const product = getProduct(slug);
+  const product = getDbProduct(slug);
   const title = slug === BUNDLE_SLUG ? PACKAGES.five_book_bundle.label : product?.title;
   if (!title) return {};
   return pageMetadata({
@@ -29,14 +31,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CheckoutPage({ params, searchParams }: Props) {
   const { slug } = await params;
   // A free book can NEVER show the payment page: send the reader to its free-copy form instead.
-  if (getFreeBook(slug)) permanentRedirect(`/books/${slug}#get-free`);
+  if (getDbFreeBook(slug)) permanentRedirect(`/books/${slug}#get-free`);
 
   if (slug === BUNDLE_SLUG) {
     if (!bundleEnabled()) notFound();
     return <CheckoutView packageId="five_book_bundle" books={[]} lang={null} backHref="/books" />;
   }
 
-  const product = getProduct(slug);
+  const product = getDbProduct(slug);
   if (!product) notFound();
   const { lang } = await searchParams;
   return <CheckoutView packageId="individual" books={[product.slug]} lang={typeof lang === "string" && LANGUAGE_CODE_RE.test(lang) ? lang : null} backHref={`/books/${product.slug}`} />;

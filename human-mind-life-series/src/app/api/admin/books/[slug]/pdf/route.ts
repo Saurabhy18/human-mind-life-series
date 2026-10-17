@@ -3,6 +3,8 @@ import path from "node:path";
 import { isAdmin } from "@/lib/server/auth";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
 import { FREE_BOOKS, getAllProducts } from "@/lib/products";
+import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
+import { getDbBookBySlug } from "@/lib/server/books";
 
 export const runtime = "nodejs";
 
@@ -14,11 +16,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
 
   const { slug } = await params;
-  // Only slugs from the catalogue are accepted, which also prevents path tricks.
-  if (![...getAllProducts(), ...FREE_BOOKS].some((p) => p.slug === slug)) return new Response("Not found", { status: 404 });
+  // Slugs from static catalogue or database are accepted
+  const isExisting = [...getAllProducts(), ...FREE_BOOKS].some((p) => p.slug === slug) || !!getDbBookBySlug(slug);
+  if (!isExisting) return new Response("Not found", { status: 404 });
 
   try {
-    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${slug}.pdf`));
+    await ensureBookSource(slug);
+    const source = getBookSource(slug);
+    const targetPath = source ? source.filePath : path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${slug}.pdf`);
+    const data = await fs.readFile(targetPath);
     return new Response(new Uint8Array(data), {
       headers: {
         "Content-Type": "application/pdf",
@@ -27,6 +33,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       },
     });
   } catch {
-    return new Response(`PDF not found. Upload it to storage/books/${slug}.pdf on the server.`, { status: 404 });
+    return new Response(`PDF not found. Upload it to storage/books/${slug}.pdf on the server or the storage bucket.`, { status: 404 });
   }
 }

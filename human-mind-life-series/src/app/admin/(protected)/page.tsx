@@ -12,15 +12,32 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
   const sp = await searchParams;
   const status = isOrderStatus(sp.status) ? sp.status : undefined;
   const q = typeof sp.q === "string" ? sp.q.trim().slice(0, 100) : "";
-  const orders = listOrders({ status, q: q || undefined });
-  const items = itemsForOrders(orders.map((o) => o.id));
-  const languages = (id: number) => [...new Set((items.get(id) ?? []).map((i) => i.target_language))].join(", ");
-  const counts = countOrdersByStatus();
 
+  let orders: any[] = [];
+  let items = new Map<number, any[]>();
+  let counts = { all: 0, pending: 0, verified: 0, rejected: 0, delivered: 0 };
+  let fetchError = "";
+
+  try {
+    orders = listOrders({ status, q: q || undefined });
+    items = itemsForOrders(orders.map((o) => o.id));
+    counts = countOrdersByStatus();
+  } catch (err: any) {
+    console.error("AdminOrdersPage query error:", err);
+    fetchError = err?.message || String(err);
+  }
+
+  const languages = (id: number) => [...new Set((items.get(id) ?? []).map((i) => i.target_language))].join(", ");
   const tabs = [{ key: undefined, label: "All", n: counts.all }, ...ORDER_STATUSES.map((s) => ({ key: s, label: STATUS_LABELS[s], n: counts[s] }))];
 
   return (
     <>
+      {fetchError && (
+        <div className="mb-6 rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger">
+          <strong>Database query notice:</strong> {fetchError}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl">Paid Orders</h1>

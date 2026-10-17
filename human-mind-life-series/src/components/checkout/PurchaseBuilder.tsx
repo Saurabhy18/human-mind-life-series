@@ -20,6 +20,7 @@ export type CheckoutBook = {
   cover: React.ReactNode;
   /** False when the book's PDF is not on the server (or is unreadable): it cannot be ordered yet. */
   deliverable: boolean;
+  free?: boolean;
 };
 
 type Props = {
@@ -48,9 +49,13 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
   const pkg = packages.find((p) => p.id === packageId) ?? packages[0];
   const includesAll = pkg.books === books.length;
   const canOrder = (slug: string) => books.some((b) => b.slug === slug && b.deliverable);
-  const [picked, setPicked] = useState<string[]>(() =>
-    pkg.books === books.length ? books.map((b) => b.slug) : initial.books.filter(canOrder).slice(0, pkg.books),
-  );
+  const [picked, setPicked] = useState<string[]>(() => {
+    if (pkg.books === books.length) return books.map((b) => b.slug);
+    const valid = initial.books.filter(canOrder);
+    if (valid.length >= pkg.books) return valid.slice(0, pkg.books);
+    const remaining = books.filter((b) => b.deliverable && !valid.includes(b.slug));
+    return [...valid, ...remaining.slice(0, pkg.books - valid.length).map((b) => b.slug)];
+  });
   // Language code per book (English by default; a language chosen on the book page arrives as ?lang=xx).
   const [langs, setLangs] = useState<Record<string, string>>(() => Object.fromEntries(initial.books.map((slug) => [slug, initial.lang ?? DEFAULT_LANGUAGE.code])));
   const languageName = useLanguageNames();
@@ -88,7 +93,13 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
     setPackageId(next.id);
     setNotice("");
     setBookNotice("");
-    setPicked((p) => (next.books === books.length ? books.map((b) => b.slug) : p.filter(canOrder).slice(0, next.books)));
+    setPicked((prev) => {
+      if (next.books === books.length) return books.map((b) => b.slug);
+      const valid = prev.filter(canOrder);
+      if (valid.length >= next.books) return valid.slice(0, next.books);
+      const remaining = books.filter((b) => b.deliverable && !valid.includes(b.slug));
+      return [...valid, ...remaining.slice(0, next.books - valid.length).map((b) => b.slug)];
+    });
   }
 
   function toggleBook(slug: string) {
@@ -218,6 +229,11 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                       {b.volumeLabel && <span className="eyebrow block">{b.volumeLabel}</span>}
                       <span className="block font-serif text-lg leading-snug">{b.title}</span>
                       <span className="block text-xs text-muted">by {b.author}</span>
+                      {b.free && (
+                        <span className="mt-1 inline-block rounded border border-gold/40 bg-gold/10 px-1.5 py-0.5 text-[0.65rem] font-semibold text-gold-dark">
+                          Free Book
+                        </span>
+                      )}
                       {unavailable && <span className="mt-1 block text-xs font-semibold text-gold-dark">{NOT_AVAILABLE}</span>}
                     </span>
                     <span

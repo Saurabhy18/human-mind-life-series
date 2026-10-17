@@ -20,6 +20,8 @@ export type Book = Omit<BookContent, "sourceLanguage"> & {
   free: boolean;
   /** Uploaded cover image path, or null to use the built-in typographic cover. */
   cover: string | null;
+  /** Stored PDF manuscript filename if uploaded */
+  pdfFilename?: string;
 };
 
 /** Anything that can be PAID for: a single paid volume or the complete-series bundle. Free books are never products. */
