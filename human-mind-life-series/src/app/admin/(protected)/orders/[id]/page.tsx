@@ -14,6 +14,7 @@ import { formatDate, StatusBadge } from "@/components/admin/StatusBadge";
 import { restartFulfillmentAction, retryTranslationAction, updateStatusAction } from "../../../actions";
 import { orderDownloads, orderJob } from "@/lib/server/adminReports";
 import { OrderLinkTools } from "@/components/admin/OrderLinkTools";
+import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -23,7 +24,9 @@ export default async function AdminOrderPage({ params }: Props) {
   if (!order) notFound();
 
   const events = getOrderEvents(order.id);
-  const items = getOrderItems(order.id).map((i) => ({ ...i, job: orderJob(i.cache_key), pdfAvailable: fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${i.book_slug}.pdf`)) }));
+  const rawItems = getOrderItems(order.id);
+  await Promise.all(rawItems.map((i) => ensureBookSource(i.book_slug)));
+  const items = rawItems.map((i) => ({ ...i, job: orderJob(i.cache_key), pdfAvailable: Boolean(getBookSource(i.book_slug)) }));
   const downloads = orderDownloads(order.id);
   const utm = order.utm_json ? (JSON.parse(order.utm_json) as Record<string, string>) : null;
   const bookList = items.map((i) => `- ${i.book_title} (${i.target_language})`).join("\n");

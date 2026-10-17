@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { LANGUAGE_CODE_RE } from "@/config/languages";
 import { getPackage } from "@/config/packages";
-import { getProduct, packageAvailable } from "@/lib/products";
+import { packageAvailable } from "@/lib/products";
+import { getBookFromDbOrStatic } from "@/lib/server/books";
 import { pageMetadata } from "@/lib/seo";
 import { CheckoutView } from "@/components/checkout/CheckoutView";
 
@@ -20,7 +21,7 @@ export const metadata: Metadata = pageMetadata({
 export default async function PackageCheckoutPage({ searchParams }: Props) {
   const sp = await searchParams;
   const pkg = getPackage(sp.package);
-  const product = typeof sp.book === "string" ? getProduct(sp.book) : undefined;
+  const product = typeof sp.book === "string" ? getBookFromDbOrStatic(sp.book) : undefined;
   const lang = typeof sp.lang === "string" && LANGUAGE_CODE_RE.test(sp.lang) ? sp.lang : null;
   return (
     <CheckoutView

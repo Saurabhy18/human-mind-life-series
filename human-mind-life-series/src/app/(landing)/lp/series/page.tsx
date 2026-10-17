@@ -4,12 +4,15 @@ import { CONFIG } from "@/config/site.config";
 import { SERIES } from "@/content/books";
 import { PACKAGES } from "@/config/packages";
 import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bookActionLabel, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
+import { getSiteCatalog } from "@/lib/server/books";
 import { pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";
 import { OfferCountdown } from "@/components/OfferCountdown";
 import { BookPrice } from "@/components/BookPrice";
 import { HowToBuy } from "@/components/HowToBuy";
 import { IconArrowRight, IconCheck } from "@/components/icons";
+
+export const dynamic = "force-dynamic";
 
 /** AD LANDING PAGE for the whole series: /lp/series */
 export const metadata: Metadata = pageMetadata({
@@ -21,6 +24,7 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function SeriesLandingPage() {
+  const { allBooks, paidBooks, freeBooks } = getSiteCatalog();
   return (
     <>
       <section className="relative overflow-hidden bg-ink text-white">
@@ -32,7 +36,7 @@ export default function SeriesLandingPage() {
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-white/75">{SERIES.shortDescription}</p>
           <div className="mx-auto mt-12 grid max-w-4xl grid-cols-3 gap-3 sm:grid-cols-6 sm:gap-5">
-            {ALL_BOOKS.map((b) => (
+            {allBooks.map((b) => (
               <Link key={b.slug} href={`/lp/${b.slug}`} className="lift block">
                 <BookCover book={b} size="sm" />
               </Link>
@@ -41,7 +45,7 @@ export default function SeriesLandingPage() {
           <div className="mt-10 flex flex-col justify-center gap-3 sm:flex-row">
             {bundleEnabled() ? (
               <Link href={`/checkout/${BUNDLE_SLUG}`} className="btn-gold px-10 py-4 text-base">
-                Get all {PAID_BOOKS.length} paid volumes for {formatINR(bundlePrice())} <IconArrowRight />
+                Get all {paidBooks.length} paid volumes for {formatINR(bundlePrice())} <IconArrowRight />
               </Link>
             ) : (
               <a href="#volumes" className="btn-gold px-10 py-4 text-base">
@@ -49,7 +53,7 @@ export default function SeriesLandingPage() {
               </a>
             )}
           </div>
-          {FREE_BOOKS.map((fb) => (
+          {freeBooks.map((fb) => (
             <p key={fb.slug} className="mt-5 text-white/80">
               Start with {fb.title} for FREE, then explore the complete series.{" "}
               <Link href={`/lp/${fb.slug}#get-free`} className="font-semibold text-emerald-300 underline underline-offset-2">

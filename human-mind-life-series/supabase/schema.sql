@@ -193,3 +193,87 @@ create table if not exists order_items (
 
 create index if not exists idx_items_order on order_items(order_id);
 create index if not exists idx_items_cache_key on order_items(cache_key);
+
+-- User profiles linked to Supabase Auth users with default 'user' role
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  full_name text,
+  role text not null default 'user' check (role in ('user', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+
+create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
+create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
+create policy "Service role has full access to profiles" on public.profiles for all using (true) with check (true);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name, role)
+  values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    coalesce(new.raw_user_meta_data->>'role', 'user')
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = case when excluded.full_name <> '' then excluded.full_name else public.profiles.full_name end,
+    role = coalesce(public.profiles.role, 'user'),
+    updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Dynamic Books catalogue table
+create table if not exists public.books (
+  id bigserial primary key,
+  slug text not null unique,
+  title text not null,
+  author text not null,
+  volume integer,
+  tagline text,
+  short_description text,
+  description text,
+  price real not null default 0,
+  original_price real,
+  currency text not null default 'INR',
+  is_free boolean not null default false,
+  for_sale boolean not null default true,
+  pdf_filename text not null,
+  cover_image text,
+  source_language text not null default 'en',
+  learn jsonb default '[]'::jsonb,
+  topics jsonb default '[]'::jsonb,
+  toc jsonb default '[]'::jsonb,
+  faqs jsonb default '[]'::jsonb,
+  sample jsonb,
+  disclaimer text,
+  hide_volume_label boolean not null default false,
+  adults_only boolean not null default false,
+  cover_bg text default '#13233f',
+  cover_accent text default '#c9a24f',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_books_slug on books(slug);
+create index if not exists idx_books_for_sale on books(for_sale);
+create index if not exists idx_books_is_free on books(is_free);
+
+alter table public.books enable row level security;
+create policy "Public read access for books" on public.books for select using (true);
+create policy "Service role has full access to books" on public.books for all using (true) with check (true);
+

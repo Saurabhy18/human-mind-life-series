@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
+import { useAuth } from "@/components/auth/AuthContext";
 import { IconShield, IconUpload } from "../icons";
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -17,6 +18,9 @@ type Errors = Record<string, string>;
  */
 export function PaymentForm({ selection, amount, summary, upiId }: { selection: PurchaseSelection; amount: number; summary: string; upiId: string }) {
   const router = useRouter();
+  const { user } = useAuth();
+  const [buyerName, setBuyerName] = useState("");
+  const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -24,6 +28,14 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const price = formatMoney(amount, "INR");
+
+  useEffect(() => {
+    if (user) {
+      if (user.fullName && !buyerName) setBuyerName(user.fullName);
+      if (user.email && !email) setEmail(user.email);
+    }
+  }, [user]);
+
 
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -108,15 +120,48 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
         </label>
       </div>
 
+      {user && (
+        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
+          <p>
+            Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
+          </p>
+          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
+            Logged In
+          </span>
+        </div>
+      )}
+
       <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label htmlFor="buyerName" className="label">Buyer Name *</label>
-          <input id="buyerName" name="buyerName" className="input" autoComplete="name" required maxLength={80} {...aria("buyerName")} />
+          <input
+            id="buyerName"
+            name="buyerName"
+            className="input"
+            autoComplete="name"
+            value={buyerName}
+            onChange={(e) => setBuyerName(e.target.value)}
+            required
+            maxLength={80}
+            {...aria("buyerName")}
+          />
           {err("buyerName")}
         </div>
         <div>
           <label htmlFor="email" className="label">Email Address *</label>
-          <input id="email" name="email" type="email" className="input" autoComplete="email" inputMode="email" required maxLength={120} {...aria("email")} />
+          <input
+            id="email"
+            name="email"
+            type="email"
+            className="input"
+            autoComplete="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            maxLength={120}
+            {...aria("email")}
+          />
           {err("email")}
         </div>
         <div className="sm:col-span-2">
@@ -125,6 +170,7 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
           {err("whatsapp")}
         </div>
       </div>
+
 
       <div>
         <label htmlFor="amountPaid" className="label">Amount Paid (₹) *</label>

@@ -6,8 +6,13 @@ const getEnv = (name: string): string => {
 };
 
 export const supabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL") || getEnv("SUPABASE_URL");
-export const supabaseAnonKey = getEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") || getEnv("SUPABASE_ANON_KEY");
+export const supabaseAnonKey =
+  getEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") ||
+  getEnv("SUPABASE_ANON_KEY") ||
+  getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 export const supabaseServiceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+export { createClient as createSupabaseBrowserClient } from "./supabase/client";
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(supabaseUrl && supabaseAnonKey);

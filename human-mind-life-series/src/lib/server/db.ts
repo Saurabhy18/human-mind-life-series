@@ -78,8 +78,9 @@ function normalizePostgresSql(sql: string, params: unknown[], mode: "get" | "all
     bindValues.push(...params);
   }
 
-  text = text.replace(/json_each\(\$([0-9]+)\)/gi, (_, index) => `jsonb_array_elements_text(CAST($${index} AS jsonb))::bigint`);
-  text = text.replace(/SELECT\s+value\s+FROM\s+json_each\(\$([0-9]+)\)/gi, (_, index) => `SELECT jsonb_array_elements_text(CAST($${index} AS jsonb))::bigint`);
+  text = text.replace(/SELECT\s+value\s+FROM\s+json_each\(\$([0-9]+)\)/gi, (_, index) => `SELECT (jsonb_array_elements_text(CAST($${index} AS jsonb)))::bigint`);
+  text = text.replace(/json_each\(\$([0-9]+)\)/gi, (_, index) => `jsonb_array_elements_text(CAST($${index} AS jsonb))`);
+
 
   return { text, values: bindValues };
 }
@@ -87,11 +88,16 @@ function normalizePostgresSql(sql: string, params: unknown[], mode: "get" | "all
 function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all" | "run" | "exec") {
   const { text, values } = normalizePostgresSql(sql, params, mode);
   const script = `
+    try { require("node:dns").setDefaultResultOrder("ipv4first"); } catch {}
     const { Client } = require("pg");
     const fs = require("node:fs");
     (async () => {
       const payload = JSON.parse(fs.readFileSync(0, "utf8"));
-      const client = new Client({ connectionString: process.env.SUPABASE_DATABASE_URL, ssl: { rejectUnauthorized: false } });
+      const client = new Client({
+        connectionString: process.env.SUPABASE_DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 10000,
+      });
       await client.connect();
       try {
         const result = await client.query(payload.text, payload.values ?? []);
@@ -113,9 +119,14 @@ function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all
         await client.end().catch(() => {});
       }
     })().catch((err) => {
-      process.stdout.write(JSON.stringify({ ok: false, message: err.message }));
+      let msg = (err && err.message) || "Supabase query failed";
+      if (msg.includes("ETIMEDOUT") && process.env.SUPABASE_DATABASE_URL && process.env.SUPABASE_DATABASE_URL.includes("db.")) {
+        msg += " (Direct Supabase connections are IPv6-only. Use the Supabase Connection Pooler URL with port 6543/5432 for IPv4 compatibility).";
+      }
+      process.stdout.write(JSON.stringify({ ok: false, message: msg }));
       process.exitCode = 1;
     });
+
   `;
 
   const child = spawnSync(process.execPath, ["-e", script], {

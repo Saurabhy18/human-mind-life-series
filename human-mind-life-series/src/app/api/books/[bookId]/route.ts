@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getBook } from "@/lib/products";
+import { getBookFromDbOrStatic } from "@/lib/server/books";
 import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
  * The source file location is deliberately NOT included: book files are private.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ bookId: string }> }) {
-  const book = getBook((await params).bookId);
+  const book = getBookFromDbOrStatic((await params).bookId);
   if (!book) return NextResponse.json({ success: false, message: "Book not found." }, { status: 404 });
   return NextResponse.json({
     success: true,

@@ -1,7 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { getPackage, type PackageId, type PurchasePackage } from "@/config/packages";
-import { getBook, packageAvailable } from "@/lib/products";
+import { packageAvailable } from "@/lib/products";
+import { getBookFromDbOrStatic } from "./books";
 import { validateOrderLanguage } from "./orderLanguage";
 import { bookDeliverable } from "./translation/bookSource";
 import type { NewOrderItem } from "./orders";
@@ -57,7 +58,7 @@ export function readSelection(body: { packageId?: unknown; items?: unknown; book
   if (body.packageId !== undefined || body.items !== undefined) return { packageId: body.packageId, items: body.items };
   const bookId = typeof body.bookId === "string" ? body.bookId : body.product;
   if (typeof bookId !== "string") return { packageId: undefined, items: undefined };
-  const lang = typeof body.targetLanguage === "string" && body.targetLanguage.trim() ? body.targetLanguage : (getBook(bookId)?.sourceLanguage ?? "en");
+  const lang = typeof body.targetLanguage === "string" && body.targetLanguage.trim() ? body.targetLanguage : (getBookFromDbOrStatic(bookId)?.sourceLanguage ?? "en");
   return { packageId: "individual", items: [{ bookId, language: lang }] };
 }
 
@@ -80,8 +81,8 @@ export async function validatePurchase(packageId: unknown, rawItems: unknown): P
   const requested = parsed.data;
   if (requested.length !== pkg.books) return { ok: false, field: "items", message: PURCHASE_MESSAGES.count(pkg) };
 
-  const books = requested.map((r) => getBook(r.bookId));
-  if (books.some((b) => !b || b.free)) return { ok: false, field: "items", message: PURCHASE_MESSAGES.invalidBook };
+  const books = requested.map((r) => getBookFromDbOrStatic(r.bookId));
+  if (books.some((b) => !b)) return { ok: false, field: "items", message: PURCHASE_MESSAGES.invalidBook };
   if (new Set(books.map((b) => b!.slug)).size !== books.length) return { ok: false, field: "items", message: PURCHASE_MESSAGES.duplicateBook };
   // Never take money for a book we cannot deliver: every book's PDF must be present and valid.
   for (const book of books) {
@@ -104,11 +105,11 @@ export async function validatePurchase(packageId: unknown, rawItems: unknown): P
     });
   }
   // Always in series order, whatever order the customer clicked them in.
-  const byVolume = (slug: string) => getBook(slug)!.volume;
+  const byVolume = (slug: string) => getBookFromDbOrStatic(slug)?.volume ?? 99;
   items.sort((a, b) => byVolume(a.book_slug) - byVolume(b.book_slug));
 
-  const single = pkg.books === 1 ? getBook(items[0].book_slug)! : null;
-  const volumes = items.map((it) => getBook(it.book_slug)!.volume);
+  const single = pkg.books === 1 ? getBookFromDbOrStatic(items[0].book_slug)! : null;
+  const volumes = items.map((it) => getBookFromDbOrStatic(it.book_slug)?.volume ?? 0).filter((v) => v > 0);
   return {
     ok: true,
     purchase: {
@@ -117,7 +118,11 @@ export async function validatePurchase(packageId: unknown, rawItems: unknown): P
       amount: pkg.price,
       currency: pkg.currency,
       productSlug: single ? single.slug : pkg.id,
-      productTitle: single ? single.label : `${pkg.name} — Volumes ${volumes.join(", ")}`,
+      productTitle: single
+        ? single.label
+        : volumes.length === items.length
+          ? `${pkg.name} — Volumes ${volumes.join(", ")}`
+          : `${pkg.name} — ${items.map((it) => it.book_title).join(", ")}`,
       author: single ? single.author : [...new Set(items.map((it) => it.author ?? ""))].filter(Boolean).join(", "),
       items,
     },

@@ -21,28 +21,34 @@ import { checkoutMode } from "@/lib/server/paymentService";
 import { translationOffered } from "@/config/env.server";
 import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 
+import { getBookFromDbOrStatic, getSiteCatalog } from "@/lib/server/books";
+
 type Props = { params: Promise<{ slug: string }> };
 
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 export function generateStaticParams() {
-  return ALL_BOOKS.map((b) => ({ slug: b.slug }));
+  const { allBooks } = getSiteCatalog();
+  return allBooks.map((b) => ({ slug: b.slug }));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const book = getBook((await params).slug);
+  const { slug } = await params;
+  const book = getBookFromDbOrStatic(slug);
   if (!book) return {};
   return pageMetadata({ title: book.seo.title, description: book.seo.description, path: `/books/${book.slug}`, image: bookOgImage(book) });
 }
 
 export default async function BookPage({ params }: Props) {
-  const book = getBook((await params).slug);
+  const { slug } = await params;
+  const book = getBookFromDbOrStatic(slug);
   if (!book) notFound();
 
+  const { allBooks } = getSiteCatalog();
   const mode = checkoutMode();
   const pay = paymentCopy(mode);
   const faqs = bookFaqs(book, mode);
-  const others = ALL_BOOKS.filter((b) => b.slug !== book.slug);
+  const others = allBooks.filter((b) => b.slug !== book.slug);
   const tracked = { slug: book.slug, label: book.label, price: book.price };
 
   return (
