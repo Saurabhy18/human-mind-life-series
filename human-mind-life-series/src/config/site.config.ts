@@ -41,11 +41,11 @@ export const CONFIG = {
   AUTHOR_VOLUME_6: "S. K. Aria",
 
   // -------------------------------------------------------------- Contact --
-  AUTHOR_EMAIL: "YOUR_EMAIL",
+  AUTHOR_EMAIL: "Saurabh933476@gmail.com",
   /** Optional separate address for business / bulk enquiries. "" = use AUTHOR_EMAIL. */
   BUSINESS_EMAIL: "",
   /** Country code + number, digits only. Example for India: "919876543210" */
-  WHATSAPP_NUMBER: "YOUR_WHATSAPP_NUMBER",
+  WHATSAPP_NUMBER: "919142786797",
   /** Shown in Terms & Conditions (jurisdiction), e.g. "Mumbai, Maharashtra". */
   BUSINESS_LOCATION: "[CITY, STATE]",
 

@@ -50,9 +50,14 @@ export default function ContactPage() {
               <h2 className="font-sans text-base font-semibold">WhatsApp</h2>
             </div>
             {wa ? (
-              <a href={wa} target="_blank" rel="noopener noreferrer" className="btn-primary mt-4">
-                <IconWhatsApp /> Chat on WhatsApp
-              </a>
+              <>
+                <a href={wa} target="_blank" rel="noopener noreferrer" className="btn-primary mt-4">
+                  <IconWhatsApp /> Chat on WhatsApp
+                </a>
+                <a href={wa} target="_blank" rel="noopener noreferrer" className="mt-3 block text-lg font-medium hover:text-gold-dark">
+                  +91 {CONFIG.WHATSAPP_NUMBER.replace(/^91/, "")}
+                </a>
+              </>
             ) : (
               <p className="mt-3 text-muted">{CONFIG.WHATSAPP_NUMBER}</p>
             )}
