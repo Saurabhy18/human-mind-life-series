@@ -1,5 +1,6 @@
 "use client";
 
+import { Globe2 } from "lucide-react";
 import { CURRENCIES, isSupportedCurrency } from "@/config/currencies";
 import { useCurrency } from "./CurrencyContext";
 
@@ -10,8 +11,10 @@ import { useCurrency } from "./CurrencyContext";
 export function CurrencySelect({ className = "" }: { className?: string }) {
   const { currency, setCurrency } = useCurrency();
   return (
-    <label className={`inline-flex items-center ${className}`}>
+    <label className={`inline-flex items-center gap-2 ${className}`}>
       <span className="sr-only">Display currency</span>
+      {/* Decorative globe to the left of the selector; 8px gap via gap-2. */}
+      <Globe2 size={20} strokeWidth={2} color="#B68B43" aria-hidden="true" className="shrink-0" />
       <select
         value={currency}
         onChange={(e) => {
