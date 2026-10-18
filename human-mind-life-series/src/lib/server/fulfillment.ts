@@ -13,7 +13,9 @@ import { getBookSource, translationCacheKey } from "./translation/bookSource";
 import { getAvailableLanguages } from "./translation/languages";
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
-const utc = (s: string) => new Date(s.replace(" ", "T") + "Z");
+// Handles both SQLite bare strings ("YYYY-MM-DD HH:MM:SS" → append T+Z) and
+// already-valid ISO strings from Supabase/PostgreSQL (contain "T" or "+" → use as-is).
+const utc = (s: string) => new Date(s.includes("T") || s.includes("+") ? s : s.replace(" ", "T") + "Z");
 
 function event(orderId: number, status: string, note: string) {
   getDb().prepare("INSERT INTO order_events (order_id, status, note) VALUES (?, ?, ?)").run(orderId, status, note);
@@ -28,14 +30,35 @@ export function issueAccessToken(orderId: number, purpose: "checkout" | "email" 
   return token;
 }
 
-/** Customer authorization: returns the order only if `token` is one of ITS tokens. */
-export function authorizeOrder(ref: unknown, token: unknown): Order | null {
+/** Customer authorization: returns the order if `token` belongs to it, or if caller is the authenticated account owner. */
+export async function authorizeOrder(ref: unknown, token: unknown, userEmail?: string | null): Promise<Order | null> {
   if (typeof ref !== "string" || !/^HM-[A-Z0-9]{8}$/.test(ref)) return null;
-  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
   const order = getOrderByRef(ref);
   if (!order) return null;
-  const row = getDb().prepare("SELECT 1 FROM order_access_tokens WHERE order_id = ? AND token_hash = ?").get(order.id, sha(token));
-  return row ? order : null;
+
+  if (typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token)) {
+    const row = getDb().prepare("SELECT 1 FROM order_access_tokens WHERE order_id = ? AND token_hash = ?").get(order.id, sha(token));
+    if (row) return order;
+  }
+
+  if (userEmail && order.email && userEmail.trim().toLowerCase() === order.email.trim().toLowerCase()) {
+    return order;
+  }
+
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user && user.email && order.email && user.email.trim().toLowerCase() === order.email.trim().toLowerCase()) {
+      return order;
+    }
+  } catch {
+    // Session check skipped if client unavailable
+  }
+
+  return null;
 }
 
 export function statusUrl(ref: string, token: string): string {

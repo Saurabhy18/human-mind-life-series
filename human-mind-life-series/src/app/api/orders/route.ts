@@ -8,6 +8,7 @@ import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp, hashIp, isSameOrigin } from "@/lib/server/request";
 import { parseItemsField, readSelection, validatePurchase, type ValidPurchase } from "@/lib/server/purchase";
 import { issueAccessToken } from "@/lib/server/fulfillment";
+import { getAuthenticatedUser } from "@/lib/server/auth";
 import { checkoutMode, gatewayEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
 
@@ -49,8 +50,13 @@ export async function POST(req: Request) {
   const limit = rateLimit(`order:${ip}`, 10, 15 * 60 * 1000);
   if (!limit.ok) return fail(429, `Too many submissions. Please try again in ${Math.ceil(limit.retryAfterSec / 60)} minutes.`);
 
-  if ((req.headers.get("content-type") || "").includes("application/json")) return createGatewayOrder(req, ip);
-  return createUpiOrder(req, ip);
+  const user = await getAuthenticatedUser();
+  if (!user || !user.email) {
+    return fail(401, "You must be signed in to place an order. Please log in or create an account to continue.", { auth: "login_required" });
+  }
+
+  if ((req.headers.get("content-type") || "").includes("application/json")) return createGatewayOrder(req, ip, user);
+  return createUpiOrder(req, ip, user);
 }
 
 // ------------------------------------------------------------- Gateway flow --
@@ -61,14 +67,14 @@ const gatewayOrderSchema = z.object({
   // Older single-book form: { bookId, targetLanguage } = an Individual Ebook order.
   bookId: z.string().trim().max(80).optional(),
   targetLanguage: z.string().trim().max(20).optional(),
-  customerName: z.string().trim().min(2, "Please enter your full name.").max(80).regex(/^[\p{L}\p{M} .'-]+$/u, "Please use letters only in your name."),
-  customerEmail: z.string().trim().toLowerCase().max(120).email("Please enter a valid email address."),
+  customerName: z.string().trim().max(80).optional(),
+  customerEmail: z.string().trim().toLowerCase().max(120).email("Please enter a valid email address.").optional(),
   consent: z.literal(true, { message: "Please accept the Terms to continue." }),
   tracking: z.unknown().optional(),
   website: z.string().optional(),
 });
 
-async function createGatewayOrder(req: Request, ip: string) {
+async function createGatewayOrder(req: Request, ip: string, user: NonNullable<Awaited<ReturnType<typeof getAuthenticatedUser>>>) {
   if (!gatewayEnabled()) return fail(404, "Online card/UPI checkout is not enabled.");
   let body: unknown;
   try {
@@ -86,12 +92,14 @@ async function createGatewayOrder(req: Request, ip: string) {
   if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
 
   try {
-    const customerId = upsertCustomer({ email: data.customerEmail, name: data.customerName });
+    const customerEmail = user.email!.toLowerCase();
+    const customerName = (data.customerName || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
+    const customerId = upsertCustomer({ email: customerEmail, name: customerName });
     const { id, ref } = createOrder({
       ...purchaseFields(checked.purchase),
       amount_paid: null,
-      buyer_name: data.customerName,
-      email: data.customerEmail,
+      buyer_name: customerName,
+      email: customerEmail,
       whatsapp: "",
       // Gateway orders have no customer-entered UTR or screenshot; a unique placeholder keeps the schema's constraints.
       utr: `GW-${crypto.randomUUID()}`,
@@ -127,7 +135,7 @@ async function createGatewayOrder(req: Request, ip: string) {
 
 // ----------------------------------------------------------------- UPI flow --
 
-async function createUpiOrder(req: Request, ip: string) {
+async function createUpiOrder(req: Request, ip: string, user: NonNullable<Awaited<ReturnType<typeof getAuthenticatedUser>>>) {
   const length = Number(req.headers.get("content-length") || 0);
   if (length > MAX_SCREENSHOT_BYTES + 64 * 1024) return fail(413, "The screenshot is too large. Maximum size is 5 MB.");
 
@@ -189,12 +197,14 @@ async function createUpiOrder(req: Request, ip: string) {
   }
 
   try {
-    const customerId = upsertCustomer({ email: data.email, name: data.buyerName, whatsapp: data.whatsapp });
+    const customerEmail = user.email!.toLowerCase();
+    const customerName = (data.buyerName || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
+    const customerId = upsertCustomer({ email: customerEmail, name: customerName, whatsapp: data.whatsapp || null });
     const { id, ref } = createOrder({
       ...purchaseFields(checked.purchase),
       amount_paid: data.amountPaid,
-      buyer_name: data.buyerName,
-      email: data.email,
+      buyer_name: customerName,
+      email: customerEmail,
       whatsapp: data.whatsapp,
       utr: data.utr,
       screenshot_file: saved.fileName,

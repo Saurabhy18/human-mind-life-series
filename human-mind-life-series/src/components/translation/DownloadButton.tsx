@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 /** Asks the server for a fresh short-lived signed URL for ONE ebook (only works for a paid, ready ebook) and starts the download. */
-export function DownloadButton({ orderRef, itemId, token, remaining, onDone }: { orderRef: string; itemId: number; token: string; remaining: number; onDone?: () => void }) {
+export function DownloadButton({ orderRef, itemId, token, remaining, onDone }: { orderRef: string; itemId: number; token?: string | null; remaining: number; onDone?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -11,7 +11,9 @@ export function DownloadButton({ orderRef, itemId, token, remaining, onDone }: {
     setBusy(true);
     setMessage("");
     try {
-      const res = await fetch(`/api/orders/${orderRef}/download?item=${itemId}`, { headers: { "x-order-token": token }, cache: "no-store" });
+      const headers: Record<string, string> = {};
+      if (token) headers["x-order-token"] = token;
+      const res = await fetch(`/api/orders/${orderRef}/download?item=${itemId}`, { headers, cache: "no-store" });
       const json = (await res.json()) as { success?: boolean; downloadUrl?: string; message?: string };
       if (res.ok && json.success && json.downloadUrl) {
         window.location.href = json.downloadUrl;

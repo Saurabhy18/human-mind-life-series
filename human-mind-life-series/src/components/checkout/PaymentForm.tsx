@@ -18,7 +18,7 @@ type Errors = Record<string, string>;
  */
 export function PaymentForm({ selection, amount, summary, upiId }: { selection: PurchaseSelection; amount: number; summary: string; upiId: string }) {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [buyerName, setBuyerName] = useState("");
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<Errors>({});
@@ -31,10 +31,60 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
 
   useEffect(() => {
     if (user) {
-      if (user.fullName && !buyerName) setBuyerName(user.fullName);
-      if (user.email && !email) setEmail(user.email);
+      if (!buyerName) {
+        setBuyerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
+      }
+      if (!email && user.email) {
+        setEmail(user.email);
+      }
     }
-  }, [user]);
+  }, [user, buyerName, email]);
+
+  if (loading) {
+    return (
+      <div className="card p-8 text-center text-muted">
+        <p className="animate-pulse">Checking account status...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    const nextUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout";
+    const saveAndRedirect = (url: string) => {
+      try {
+        sessionStorage.setItem("hm:pending-checkout", JSON.stringify(selection));
+      } catch {}
+      router.push(url);
+    };
+
+    return (
+      <div className="rounded-2xl border border-gold/40 bg-cream/70 p-6 sm:p-8 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gold/15 text-gold-dark mb-4">
+          <IconShield width={24} height={24} />
+        </div>
+        <h3 className="text-xl font-serif text-ink">Sign in to complete your purchase</h3>
+        <p className="mt-2 text-sm text-muted max-w-md mx-auto">
+          You must be logged in to submit payment details and place your order. Your ebooks will be linked to your personal account library.
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => saveAndRedirect(`/login?next=${encodeURIComponent(nextUrl)}`)}
+            className="btn-primary w-full sm:w-auto px-6 py-2.5 text-center"
+          >
+            Sign In to Continue
+          </button>
+          <button
+            type="button"
+            onClick={() => saveAndRedirect(`/signup?next=${encodeURIComponent(nextUrl)}`)}
+            className="btn-outline w-full sm:w-auto px-6 py-2.5 text-center"
+          >
+            Create an Account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
 
   useEffect(() => () => {
@@ -71,6 +121,8 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
     setFormError("");
     const form = e.currentTarget;
     const data = new FormData(form);
+    if (!data.get("buyerName") && buyerName) data.set("buyerName", buyerName.trim());
+    if (!data.get("email") && email) data.set("email", email.trim().toLowerCase());
 
     const file = fileRef.current?.files?.[0];
     if (!file) {
@@ -148,20 +200,21 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
           {err("buyerName")}
         </div>
         <div>
-          <label htmlFor="email" className="label">Email Address *</label>
+          <label htmlFor="email" className="label">Account Email</label>
           <input
             id="email"
             name="email"
             type="email"
-            className="input"
+            className="input bg-cream/40 cursor-not-allowed font-medium text-ink/80"
             autoComplete="email"
             inputMode="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            readOnly
             required
             maxLength={120}
             {...aria("email")}
           />
+          <p className="mt-1 text-xs text-muted">Your order and library access will be linked to this account email.</p>
           {err("email")}
         </div>
         <div className="sm:col-span-2">

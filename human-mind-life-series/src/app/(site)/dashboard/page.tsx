@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { logoutAction } from "@/app/auth/actions";
 import { getOrdersByEmail, type Order } from "@/lib/server/orders";
+import { issueAccessToken } from "@/lib/server/fulfillment";
 
 export const metadata: Metadata = {
   title: "My Dashboard",
@@ -231,7 +232,7 @@ export default async function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <Link
-                        href={`/order/status/${ord.ref}`}
+                        href={`/order/status/${ord.ref}#t=${issueAccessToken(ord.id, "checkout")}`}
                         className="btn-outline px-4 py-2 text-xs font-medium"
                       >
                         View Order Status

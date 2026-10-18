@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pageMetadata } from "@/lib/seo";
 import { gatewayEnabled } from "@/lib/server/paymentService";
@@ -19,8 +20,22 @@ export default async function OrderStatusPage({ params }: Props) {
   const { ref } = await params;
   if (!/^HM-[A-Z0-9]{8}$/.test(ref)) notFound();
   return (
-    <div className="container-page py-14 sm:py-20">
+    <div className="container-page py-10 sm:py-16">
       <div className="mx-auto max-w-2xl">
+        <div className="mb-6 flex items-center justify-between">
+          <Link href="/dashboard" className="text-sm font-medium text-muted hover:text-ink transition flex items-center gap-1.5">
+            ← My Dashboard
+          </Link>
+          <div className="flex items-center gap-4 text-sm font-medium">
+            <Link href="/books" className="text-muted hover:text-ink transition">
+              Books
+            </Link>
+            <span className="text-line">·</span>
+            <Link href="/" className="text-muted hover:text-ink transition">
+              Home
+            </Link>
+          </div>
+        </div>
         <h1 className="mb-8 text-center text-4xl">Your order</h1>
         <TranslationProgress orderRef={ref} gateway={gatewayEnabled()} />
       </div>

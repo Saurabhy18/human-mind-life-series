@@ -18,7 +18,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ orderId:
   const ip = clientIp(req.headers);
   const headers = { "Cache-Control": "no-store" };
   if (!rateLimit(`download:${ip}`, 20, 15 * 60_000).ok) return NextResponse.json({ success: false, message: "Too many requests. Please try again later." }, { status: 429, headers });
-  const order = authorizeOrder((await params).orderId, req.headers.get("x-order-token"));
+  const order = await authorizeOrder((await params).orderId, req.headers.get("x-order-token"));
   if (!order) return NextResponse.json({ success: false, message: "Order not found." }, { status: 404, headers });
 
   const raw = new URL(req.url).searchParams.get("item");
