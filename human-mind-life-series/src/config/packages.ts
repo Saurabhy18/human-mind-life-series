@@ -61,3 +61,17 @@ export function formatMoney(amount: number, currency: string = "INR"): string {
   if (currency === "INR") return `₹${amount.toLocaleString("en-IN")}`;
   return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount);
 }
+
+/**
+ * Same value as `formatMoney`, but split into the currency symbol and the numeric
+ * part so a caller can style the symbol (e.g. bold) separately from the amount.
+ * The two concatenated are always exactly `formatMoney(amount, currency)`, so the
+ * displayed figure — and the currency charged — never changes.
+ */
+export function formatMoneyParts(amount: number, currency: string = "INR"): { symbol: string; amount: string } {
+  if (currency === "INR") return { symbol: "₹", amount: amount.toLocaleString("en-IN") };
+  const parts = new Intl.NumberFormat("en", { style: "currency", currency }).formatToParts(amount);
+  const symbol = parts.filter((p) => p.type === "currency").map((p) => p.value).join("");
+  const rest = parts.filter((p) => p.type !== "currency").map((p) => p.value).join("").trim();
+  return { symbol, amount: rest };
+}

@@ -33,7 +33,6 @@ export function FreeBookSection({ book, tone = "light" }: { book: Book; tone?: "
           <FreeBookForm
             book={{ slug: book.slug, label: book.label, title: book.title }}
             adultsOnly={book.adultsOnly}
-            linkHours={CONFIG.FREE_DOWNLOAD_LINK_HOURS}
             linkLimit={CONFIG.FREE_DOWNLOAD_LIMIT}
             tone={tone}
           />

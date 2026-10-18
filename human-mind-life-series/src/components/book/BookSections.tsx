@@ -106,10 +106,17 @@ export function SamplePreview({ book }: { book: Book }) {
 
 export function Disclaimer({ book }: { book: Book }) {
   if (!book.disclaimer) return null;
+  // A disclaimer may be one paragraph (per-book) or several (the shared general one,
+  // whose paragraphs are separated by a blank line) — render each as its own <p>.
+  const paragraphs = book.disclaimer.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   return (
     <aside aria-label="Disclaimer" className="rounded-2xl border border-line bg-white p-6 text-sm leading-relaxed text-muted">
-      <p className="mb-1 font-semibold text-ink">Disclaimer</p>
-      {book.disclaimer}
+      <p className="mb-2 font-semibold text-ink">Disclaimer</p>
+      <div className="space-y-3">
+        {paragraphs.map((p, i) => (
+          <p key={i}>{p}</p>
+        ))}
+      </div>
     </aside>
   );
 }
@@ -129,7 +136,7 @@ export function bookFaqs(book: Book, mode: CheckoutMode): FaqItem[] {
       {
         q: "How will I receive it?",
         a: CONFIG.FREE_BOOK_INSTANT_DOWNLOAD
-          ? `Right after you submit the form you get a personal download link, valid for ${CONFIG.FREE_DOWNLOAD_LINK_HOURS} hours. If the link is not available, we send your copy to your email or WhatsApp.`
+          ? "Right after you submit the form you get a personal download link. If the link is not available, we send your copy to your email or WhatsApp."
           : "We send your free copy to the email address (and WhatsApp number, if provided) that you enter in the form.",
       },
     ];

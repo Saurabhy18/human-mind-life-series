@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { BASE_CURRENCY, isSupportedCurrency, type CurrencyCode } from "@/config/currencies";
-import { formatInCurrency, type Rates } from "@/lib/currency";
+import { formatInCurrency, formatInCurrencyParts, type Rates } from "@/lib/currency";
 
 type CurrencyContextValue = {
   /** The currency prices are currently displayed in. */
@@ -13,6 +13,8 @@ type CurrencyContextValue = {
   ready: boolean;
   /** Format a base-INR amount in the selected display currency. */
   format: (inrAmount: number) => string;
+  /** Same as `format`, but returns the currency symbol and numeric part separately (for styling the symbol). */
+  formatParts: (inrAmount: number) => { symbol: string; amount: string };
 };
 
 const STORAGE_KEY = "display-currency";
@@ -28,6 +30,7 @@ const DEFAULT: CurrencyContextValue = {
   rates: { [BASE_CURRENCY]: 1 },
   ready: false,
   format: (inrAmount) => formatInCurrency(inrAmount, BASE_CURRENCY, { [BASE_CURRENCY]: 1 }),
+  formatParts: (inrAmount) => formatInCurrencyParts(inrAmount, BASE_CURRENCY, { [BASE_CURRENCY]: 1 }),
 };
 
 const CurrencyContext = createContext<CurrencyContextValue>(DEFAULT);
@@ -83,6 +86,7 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
       rates,
       ready,
       format: (inrAmount: number) => formatInCurrency(inrAmount, currency, rates),
+      formatParts: (inrAmount: number) => formatInCurrencyParts(inrAmount, currency, rates),
     }),
     [currency, setCurrency, rates, ready],
   );

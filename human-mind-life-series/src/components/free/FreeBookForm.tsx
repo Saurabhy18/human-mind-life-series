@@ -15,13 +15,11 @@ type Result = { ref: string; downloadUrl: string | null };
 export function FreeBookForm({
   book,
   adultsOnly,
-  linkHours,
   linkLimit,
   tone = "light",
 }: {
   book: { slug: string; label: string; title: string };
   adultsOnly?: boolean;
-  linkHours: number;
   linkLimit: number;
   tone?: "light" | "dark";
 }) {
@@ -79,7 +77,7 @@ export function FreeBookForm({
               Download {book.title} (PDF)
             </a>
             <p className="mx-auto mt-3 max-w-sm text-xs leading-relaxed text-muted">
-              This is your personal link. It works for {linkHours} hours and up to {linkLimit} downloads. Please do not share it.
+              This is your personal link, for your use only (up to {linkLimit} downloads). Please do not share it.
             </p>
           </>
         ) : (

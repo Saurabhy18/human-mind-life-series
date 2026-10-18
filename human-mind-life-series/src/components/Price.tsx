@@ -29,15 +29,30 @@ export function Price({ amount, originalPrice, priceClassName = "", className = 
   const { format } = useCurrency();
   // The discount percentage is currency-invariant, so compute it on the INR amounts.
   const off = discountPercent(amount, originalPrice);
-  const current = format(amount);
-  if (!off || !originalPrice) return <span className={priceClassName}>{current}</span>;
+  if (!off || !originalPrice) return <Money inrAmount={amount} className={priceClassName} />;
   return (
     <span className={`inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle ${align === "end" ? "justify-end" : ""} ${className}`}>
       <span className="sr-only">Original price </span>
       <s className={`${ORIGINAL_SIZE[size]} leading-none decoration-1 ${tone === "dark" ? "text-white/55" : "text-muted"}`}>{format(originalPrice)}</s>
       <span className="discount-badge">{off}% OFF</span>
       <span className="sr-only">, now </span>
-      <span className={priceClassName}>{current}</span>
+      <Money inrAmount={amount} className={priceClassName} />
+    </span>
+  );
+}
+
+/**
+ * One price with the currency symbol rendered in bold so it reads clearly on
+ * every device. `symbol + amount` is exactly what `format()` returns, so the
+ * figure shown (and the INR amount charged) is unchanged.
+ */
+function Money({ inrAmount, className = "" }: { inrAmount: number; className?: string }) {
+  const { formatParts } = useCurrency();
+  const { symbol, amount } = formatParts(inrAmount);
+  return (
+    <span className={`font-semibold ${className}`}>
+      <span className="font-bold">{symbol}</span>
+      {amount}
     </span>
   );
 }

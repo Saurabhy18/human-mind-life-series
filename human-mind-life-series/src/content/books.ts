@@ -17,6 +17,8 @@
  * ============================================================================
  */
 
+import { GENERAL_DISCLAIMER } from "./disclaimer";
+
 export type FaqItem = { q: string; a: string };
 
 export type BookContent = {
@@ -43,8 +45,6 @@ export type BookContent = {
   seo: { title: string; description: string };
 };
 
-const GENERAL_DISCLAIMER =
-  "This book is intended for general educational and self-development purposes. It is not a substitute for professional psychological, psychiatric or medical advice, diagnosis or treatment. If you are struggling with your mental health, please consult a qualified professional.";
 
 export const BOOKS: BookContent[] = [
   {

@@ -49,16 +49,17 @@ describe("Pricing: Volumes 1–5 at ₹599 → 50% OFF → ₹299", () => {
     const html = renderToStaticMarkup(createElement(BookPrice, { book: PAID_BOOKS[0], priceClassName: "font-serif" }));
     expect(html).toMatch(/<s [^>]*>₹599<\/s>/);
     expect(html).toContain(">50% OFF<");
-    expect(html).toContain('<span class="font-serif">₹299</span>');
+    // The current price keeps its caller class and renders the ₹ symbol in bold, as "₹" + "299".
+    expect(html).toContain('<span class="font-semibold font-serif"><span class="font-bold">₹</span>299</span>');
     expect(html.indexOf("₹599")).toBeLessThan(html.indexOf("50% OFF"));
-    expect(html.indexOf("50% OFF")).toBeLessThan(html.indexOf("₹299<"));
+    expect(html.indexOf("50% OFF")).toBeLessThan(html.indexOf(">₹</span>299"));
     expect(html).not.toContain("299.5");
 
     const free = renderToStaticMarkup(createElement(BookPrice, { book: FREE_BOOKS[0], priceClassName: "text-success" }));
     expect(free).toBe('<span class="text-success">FREE</span>');
 
-    // Bundles have no original price, so they render exactly as before.
-    expect(renderToStaticMarkup(createElement(Price, { amount: 649 }))).toBe("<span class=\"\">₹649</span>");
+    // Bundles have no original price: a single price with the ₹ symbol in bold.
+    expect(renderToStaticMarkup(createElement(Price, { amount: 649 }))).toBe('<span class="font-semibold "><span class="font-bold">₹</span>649</span>');
   });
 });
 
