@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Cashfree } from "@cashfreepayments/cashfree-js";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
+import { useAuth } from "@/components/auth/AuthContext";
 import { IconShield } from "../icons";
 
 /** Browser-only key where the order's access token is kept across the full-page redirect to Cashfree
@@ -21,14 +23,78 @@ type Checkout = { provider: "cashfree"; mode: "sandbox" | "production"; paymentS
  */
 export function GatewayCheckout({ selection, amount, currency }: { selection: PurchaseSelection; amount: number; currency: string }) {
   const router = useRouter();
+  const { user, loading } = useAuth();
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      if (!customerName) {
+        setCustomerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
+      }
+      if (!customerEmail && user.email) {
+        setCustomerEmail(user.email);
+      }
+    }
+  }, [user, customerName, customerEmail]);
+
+  if (loading) {
+    return (
+      <div className="card p-8 text-center text-muted">
+        <p className="animate-pulse">Checking account status...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    const nextUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout";
+    const saveAndRedirect = (url: string) => {
+      try {
+        sessionStorage.setItem("hm:pending-checkout", JSON.stringify(selection));
+      } catch {}
+      router.push(url);
+    };
+
+    return (
+      <div className="rounded-2xl border border-gold/40 bg-cream/70 p-6 sm:p-8 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gold/15 text-gold-dark mb-4">
+          <IconShield width={24} height={24} />
+        </div>
+        <h3 className="text-xl font-serif text-ink">Sign in to complete your purchase</h3>
+        <p className="mt-2 text-sm text-muted max-w-md mx-auto">
+          You must be logged in to place an order. Your ebooks will be immediately linked to your account and accessible from your dashboard anytime.
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => saveAndRedirect(`/login?next=${encodeURIComponent(nextUrl)}`)}
+            className="btn-primary w-full sm:w-auto px-6 py-2.5 text-center"
+          >
+            Sign In to Continue
+          </button>
+          <button
+            type="button"
+            onClick={() => saveAndRedirect(`/signup?next=${encodeURIComponent(nextUrl)}`)}
+            className="btn-outline w-full sm:w-auto px-6 py-2.5 text-center"
+          >
+            Create an Account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
     const f = new FormData(e.currentTarget);
+    const finalName = (customerName || String(f.get("customerName") || "")).trim();
+    const finalEmail = (customerEmail || String(f.get("customerEmail") || "")).trim().toLowerCase();
+    const consentGiven = f.get("consent") === "on" || f.get("consent") === "true";
+
     setBusy(true);
     try {
       const res = await fetch("/api/orders", {
@@ -37,9 +103,9 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         body: JSON.stringify({
           packageId: selection.packageId,
           items: selection.items,
-          customerName: String(f.get("customerName") || ""),
-          customerEmail: String(f.get("customerEmail") || ""),
-          consent: f.get("consent") === "on",
+          customerName: finalName,
+          customerEmail: finalEmail,
+          consent: consentGiven,
           website: String(f.get("website") || ""),
           tracking: getAttribution() ?? {},
         }),
@@ -114,6 +180,17 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
+      {user && (
+        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
+          <p>
+            Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
+          </p>
+          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
+            Logged In
+          </span>
+        </div>
+      )}
+
       <div className="hidden" aria-hidden="true">
         <label>
           Website <input type="text" name="website" tabIndex={-1} autoComplete="off" />
@@ -121,16 +198,37 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
       </div>
       <div>
         <label htmlFor="gw-name" className="label">Name *</label>
-        <input id="gw-name" name="customerName" className="input" autoComplete="name" required maxLength={80} />
+        <input
+          id="gw-name"
+          name="customerName"
+          className="input"
+          autoComplete="name"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          required
+          maxLength={80}
+        />
         {errors.customerName && <p className="mt-1.5 text-sm text-danger">{errors.customerName}</p>}
       </div>
       <div>
-        <label htmlFor="gw-email" className="label">Email *</label>
-        <input id="gw-email" name="customerEmail" type="email" className="input" autoComplete="email" required maxLength={120} placeholder="you@example.com" />
+        <label htmlFor="gw-email" className="label">Account Email</label>
+        <input
+          id="gw-email"
+          name="customerEmail"
+          type="email"
+          className="input bg-cream/40 cursor-not-allowed font-medium text-ink/80"
+          autoComplete="email"
+          value={customerEmail}
+          readOnly
+          required
+          maxLength={120}
+        />
+        <p className="mt-1 text-xs text-muted">Your order and library access will be linked to this account email.</p>
         {errors.customerEmail && <p className="mt-1.5 text-sm text-danger">{errors.customerEmail}</p>}
       </div>
+
       <label className="flex items-start gap-3 text-sm leading-relaxed text-ink/85">
-        <input type="checkbox" name="consent" className="mt-1 h-4 w-4 shrink-0" />
+        <input type="checkbox" name="consent" defaultChecked required className="mt-1 h-4 w-4 shrink-0" />
         <span>
           I agree to the <a href="/terms-and-conditions" target="_blank" className="underline">Terms</a>, <a href="/privacy-policy" target="_blank" className="underline">Privacy Policy</a> and{" "}
           <a href="/refund-policy" target="_blank" className="underline">Refund Policy</a>.

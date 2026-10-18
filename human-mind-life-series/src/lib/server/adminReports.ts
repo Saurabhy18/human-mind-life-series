@@ -40,9 +40,9 @@ export function translationMetrics() {
   const totals = db
     .prepare(`
       SELECT COUNT(*) AS jobs,
-             SUM(status = 'COMPLETED') AS completed,
-             SUM(status = 'FAILED') AS failed,
-             SUM(status IN ('QUEUED','PROCESSING')) AS active,
+             COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS completed,
+             COUNT(CASE WHEN status = 'FAILED' THEN 1 END) AS failed,
+             COUNT(CASE WHEN status IN ('QUEUED','PROCESSING') THEN 1 END) AS active,
              COALESCE(SUM(chars_translated), 0) AS chars,
              COALESCE(SUM(pages_translated), 0) AS pages,
              COALESCE(SUM(est_cost_usd), 0) AS cost,

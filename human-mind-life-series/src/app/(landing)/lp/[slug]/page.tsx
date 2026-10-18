@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CONFIG } from "@/config/site.config";
-import { ALL_BOOKS, formatINR, getBook } from "@/lib/products";
+import { ALL_BOOKS, formatINR } from "@/lib/products";
+import { getBookFromDbOrStatic } from "@/lib/server/books";
 import { FreeBadge, FreeBookSection } from "@/components/free/FreeBookSection";
 import { BookPurchase } from "@/components/translation/BookPurchase";
 import { bookOgImage, pageMetadata } from "@/lib/seo";
@@ -26,20 +27,20 @@ import { bookIsTranslatable } from "@/lib/server/orderLanguage";
  */
 type Props = { params: Promise<{ slug: string }> };
 
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 export function generateStaticParams() {
   return ALL_BOOKS.map((b) => ({ slug: b.slug }));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const book = getBook((await params).slug);
+  const book = getBookFromDbOrStatic((await params).slug);
   if (!book) return {};
   return pageMetadata({ title: book.seo.title, description: book.seo.description, path: `/lp/${book.slug}`, noIndex: true, image: bookOgImage(book) });
 }
 
 export default async function LandingPage({ params }: Props) {
-  const book = getBook((await params).slug);
+  const book = getBookFromDbOrStatic((await params).slug);
   if (!book) notFound();
   const mode = checkoutMode();
   const pay = paymentCopy(mode);

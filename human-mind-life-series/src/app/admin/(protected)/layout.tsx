@@ -8,8 +8,15 @@ export const dynamic = "force-dynamic";
 
 export default async function ProtectedAdminLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
-  const unread = countUnhandledMessages();
-  const newFree = countFreeByStatus().received;
+  let unread = 0;
+  let newFree = 0;
+  try {
+    unread = countUnhandledMessages();
+    newFree = countFreeByStatus().received;
+  } catch (err) {
+    console.error("ProtectedAdminLayout counts error:", err);
+  }
+
 
   return (
     <>
@@ -21,6 +28,7 @@ export default async function ProtectedAdminLayout({ children }: { children: Rea
             </Link>
             <nav className="flex gap-4 text-sm font-medium text-ink/70">
               <Link href="/admin" className="hover:text-ink">Paid Orders</Link>
+              <Link href="/admin/books" className="hover:text-ink">Books &amp; Catalogue</Link>
               <Link href="/admin/free-requests" className="hover:text-ink">
                 Free Requests{newFree > 0 && <span className="ml-1 rounded-full bg-success px-1.5 text-xs text-white">{newFree}</span>}
               </Link>

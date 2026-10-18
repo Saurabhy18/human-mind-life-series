@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getAttribution } from "@/lib/tracking-params";
 import { trackFreeBookRequest } from "@/lib/analytics";
+import { useAuth } from "@/components/auth/AuthContext";
 import { IconCheck, IconClock, IconShield } from "../icons";
 
 type Errors = Record<string, string>;
@@ -11,6 +12,7 @@ type Result = { ref: string; downloadUrl: string | null };
 /**
  * "Get Free Book" form for books priced at ₹0. It has NO payment fields:
  * no QR code, no UTR, no amount and no screenshot.
+ * Anyone can download, whether logged in or not.
  */
 export function FreeBookForm({
   book,
@@ -23,11 +25,22 @@ export function FreeBookForm({
   linkLimit: number;
   tone?: "light" | "dark";
 }) {
+  const { user } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const dark = tone === "dark";
+
+  useEffect(() => {
+    if (user) {
+      if (user.fullName && !name) setName(user.fullName);
+      if (user.email && !email) setEmail(user.email);
+    }
+  }, [user]);
+
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -103,6 +116,17 @@ export function FreeBookForm({
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
+      {user && (
+        <div className={`rounded-xl border p-3 text-xs flex items-center justify-between ${dark ? "bg-white/10 border-white/20 text-white" : "bg-gold/10 border-gold/25 text-ink/80"}`}>
+          <p>
+            Requesting copy as <strong className="font-semibold">{user.fullName || user.email}</strong> ({user.email})
+          </p>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${dark ? "bg-white/20 text-white" : "bg-gold/20 text-gold-dark"}`}>
+            Logged In
+          </span>
+        </div>
+      )}
+
       {/* Honeypot — hidden from people, catches spam bots */}
       <div className="hidden" aria-hidden="true">
         <label>
@@ -112,14 +136,37 @@ export function FreeBookForm({
 
       <div>
         <label htmlFor="free-name" className={label}>Name *</label>
-        <input id="free-name" name="name" className="input" autoComplete="name" required maxLength={80} {...aria("name")} />
+        <input
+          id="free-name"
+          name="name"
+          className="input"
+          autoComplete="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          maxLength={80}
+          {...aria("name")}
+        />
         {err("name")}
       </div>
       <div>
         <label htmlFor="free-email" className={label}>Email Address *</label>
-        <input id="free-email" name="email" type="email" className="input" autoComplete="email" inputMode="email" required maxLength={120} {...aria("email")} />
+        <input
+          id="free-email"
+          name="email"
+          type="email"
+          className="input"
+          autoComplete="email"
+          inputMode="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          maxLength={120}
+          {...aria("email")}
+        />
         {err("email")}
       </div>
+
       <div>
         <label htmlFor="free-whatsapp" className={label}>
           WhatsApp Number <span className={dark ? "font-normal text-white/60" : "font-normal text-muted"}>(optional)</span>

@@ -32,9 +32,10 @@ export type TranslationStrategy = "document" | "text";
 export type PaymentProvider = "none" | "manual_upi" | "cashfree";
 
 function paymentProvider(): PaymentProvider {
-  const v = str("PAYMENT_PROVIDER", "none");
-  return v === "cashfree" || v === "manual_upi" ? v : "none";
+  const v = str("PAYMENT_PROVIDER", "manual_upi");
+  return v === "cashfree" || v === "manual_upi" ? v : "manual_upi";
 }
+
 
 function translationProvider(): TranslationProvider {
   const v = str("TRANSLATION_PROVIDER", projectId ? "google" : "none");
@@ -43,9 +44,45 @@ function translationProvider(): TranslationProvider {
   return v === "google" && projectId ? "google" : "none";
 }
 
+const supabaseDbConfigured = !!str("SUPABASE_DATABASE_URL");
+const databaseDriverName = str("DB_DRIVER");
+const resolvedDatabaseDriver = databaseDriverName
+  ? (databaseDriverName.toLowerCase() === "supabase" ? "supabase" : "sqlite")
+  : supabaseDbConfigured
+    ? "supabase"
+    : "sqlite";
+
+const storageDriverName = str("STORAGE_DRIVER", "").toLowerCase();
+const storageBucketName = str("SUPABASE_STORAGE_BUCKET", str("BOOK_STORAGE_BUCKET", "site-files"));
+const resolvedStorageDriver =
+  storageDriverName === "supabase"
+    ? "supabase"
+    : storageDriverName === "gcs"
+      ? "gcs"
+      : storageDriverName === "local"
+        ? "local"
+        : !!str("SUPABASE_STORAGE_BUCKET")
+          ? "supabase"
+          : str("BOOK_STORAGE_BUCKET")
+            ? "gcs"
+            : "local";
+
 export const ENV = {
   isProd,
   frontendUrl: str("FRONTEND_URL", SITE_URL).replace(/\/$/, ""),
+
+  database: {
+    driver: resolvedDatabaseDriver as "sqlite" | "supabase",
+    ready: resolvedDatabaseDriver === "supabase" || !!str("SUPABASE_DATABASE_URL"),
+  },
+
+  supabase: {
+    url: str("NEXT_PUBLIC_SUPABASE_URL", str("SUPABASE_URL")),
+    anonKey: str("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", str("SUPABASE_ANON_KEY")),
+    serviceRoleKey: str("SUPABASE_SERVICE_ROLE_KEY"),
+    databaseUrl: str("SUPABASE_DATABASE_URL"),
+    ready: !!str("NEXT_PUBLIC_SUPABASE_URL", str("SUPABASE_URL")) && !!str("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", str("SUPABASE_ANON_KEY")),
+  },
 
   // ---------------------------------------------------------- Translation --
   translation: {
@@ -77,8 +114,17 @@ export const ENV = {
   payment: (() => {
     // Live Cashfree is used ONLY when NODE_ENV=production AND CASHFREE_ENV=production.
     // Everywhere else (local, preview, tests) we are pinned to sandbox, so no real money can move.
+    const explicitEnv = str("CASHFREE_ENV").toLowerCase();
+    const clientId = str("CASHFREE_CLIENT_ID");
+    const isTestKey = clientId.toLowerCase().startsWith("test");
     const cashfreeEnv: "sandbox" | "production" =
-      str("CASHFREE_ENV", isProd ? "production" : "sandbox").toLowerCase() === "production" && isProd ? "production" : "sandbox";
+      explicitEnv === "production"
+        ? "production"
+        : explicitEnv === "sandbox"
+          ? "sandbox"
+          : isTestKey
+            ? "sandbox"
+            : (isProd ? "production" : "sandbox");
     const defaultApiBase = cashfreeEnv === "production" ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg";
     return {
       provider: paymentProvider(),
@@ -93,8 +139,8 @@ export const ENV = {
 
   // ---------------------------------------------------- Storage & download --
   storage: {
-    driver: (str("STORAGE_DRIVER", str("BOOK_STORAGE_BUCKET") ? "gcs" : "local") === "gcs" ? "gcs" : "local") as "local" | "gcs",
-    bucket: str("BOOK_STORAGE_BUCKET"),
+    driver: resolvedStorageDriver as "local" | "gcs" | "supabase",
+    bucket: storageBucketName,
   },
   download: {
     /** Lifetime of each signed download URL, in seconds. */

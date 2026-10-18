@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { CONFIG, isPlaceholder } from "@/config/site.config";
 import { PACKAGES, PACKAGE_IDS, type PackageId } from "@/config/packages";
-import { PAID_BOOKS, getBook, packageAvailable } from "@/lib/products";
+import { ALL_BOOKS } from "@/lib/products";
 import { whatsappLink } from "@/lib/contact";
 import { translationOffered } from "@/config/env.server";
 import { upiQrAvailable } from "@/lib/server/qr";
 import { checkoutMode } from "@/lib/server/paymentService";
 import { bookDeliverable } from "@/lib/server/translation/bookSource";
+import { listDbBooks, dbBookToProductBook, getBookFromDbOrStatic } from "@/lib/server/books";
 import { BookCover } from "@/components/BookCover";
 import { TrackView } from "@/components/tracking/TrackView";
 import { IconQr } from "@/components/icons";
@@ -18,13 +19,16 @@ import { PurchaseBuilder } from "./PurchaseBuilder";
  * settings, book files and the QR file are always current.
  */
 export async function CheckoutView({ packageId, books, lang, backHref }: { packageId: PackageId; books: string[]; lang: string | null; backHref: string }) {
-  const packages = PACKAGE_IDS.map((id) => PACKAGES[id]).filter(packageAvailable);
-  const pkg = PACKAGES[packageId];
-  const single = books.length === 1 && pkg.books === 1 ? getBook(books[0]) : undefined;
+  const dbBooks = listDbBooks();
+  const allBooks = dbBooks.length > 0 ? dbBooks.map(dbBookToProductBook) : ALL_BOOKS;
+
+  const packages = PACKAGE_IDS.map((id) => PACKAGES[id]).filter((p) => p.books >= 1 && p.books <= allBooks.length);
+  const pkg = PACKAGES[packageId] ?? packages[0];
+  const single = books.length === 1 && pkg.books === 1 ? getBookFromDbOrStatic(books[0]) : undefined;
   const tracked = single ? { slug: single.slug, label: single.label, price: pkg.price } : { slug: pkg.id, label: pkg.name, price: pkg.price };
 
   const mode = checkoutMode();
-  const deliverable = await Promise.all(PAID_BOOKS.map((b) => bookDeliverable(b)));
+  const deliverable = await Promise.all(allBooks.map((b) => bookDeliverable(b)));
   const upiId = CONFIG.UPI_ID;
   const qr = mode !== "upi" ? null : upiQrAvailable() ? (
     <div className="rounded-2xl border border-line bg-white p-3">
@@ -51,7 +55,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
         <h1 className="mt-4 text-4xl sm:text-5xl">Complete Your Purchase</h1>
         <div className="mt-10">
           <PurchaseBuilder
-            books={PAID_BOOKS.map((b, i) => ({
+            books={allBooks.map((b, i) => ({
               slug: b.slug,
               title: b.title,
               label: b.label,
@@ -59,6 +63,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
               author: b.author,
               cover: <BookCover book={b} size="xs" />,
               deliverable: deliverable[i],
+              free: b.free,
             }))}
             packages={packages}
             individualPrice={PACKAGES.individual.price}

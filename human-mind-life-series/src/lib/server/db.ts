@@ -1,7 +1,172 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync, backup, type SQLInputValue, type StatementSync } from "node:sqlite";
+import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
+import type { DatabaseSync as SqliteDatabaseSync, SQLInputValue, StatementSync as SqliteStatementSync } from "node:sqlite";
+import { ENV } from "@/config/env.server";
+import { isSupportedNodeVersion } from "@/lib/runtime";
+
+const requireFromFile = createRequire(import.meta.url);
+
+type SqliteModule = typeof import("node:sqlite");
+
+function getSqliteModule(): SqliteModule {
+  if (ENV.database.driver === "supabase" && !!ENV.supabase.databaseUrl) {
+    throw new Error("The SQLite compatibility layer is disabled while the Supabase database driver is active.");
+  }
+
+  try {
+    return requireFromFile("node:sqlite") as SqliteModule;
+  } catch {
+    if (!isSupportedNodeVersion()) {
+      throw new Error(
+        "This project requires Node.js 24 or newer because it uses the built-in node:sqlite API. Switch to Node 24 with `nvm use 24` or `fnm use 24`, then run the app again.",
+      );
+    }
+
+    throw new Error(
+      "Unable to load the built-in node:sqlite module. Please use Node.js 24 or newer to run this project.",
+    );
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizePostgresSql(sql: string, params: unknown[], mode: "get" | "all" | "run" | "exec") {
+  let text = sql.trim().replace(/;\s*$/, "");
+  const bindValues: unknown[] = [];
+
+  text = text.replace(/datetime\(['\"]now['\"]\)/gi, "NOW()");
+  text = text.replace(/datetime\(['\"]now['\"],\s*'\+'\s*\|\|\s*(\?|@([A-Za-z_][A-Za-z0-9_]*)|:([A-Za-z_][A-Za-z0-9_]*))\s*\|\|\s*'\s*(hours|minutes|seconds)\s*'\)/gi, (_match, placeholder, named1, named2, unit) => {
+    const token = placeholder ?? named1 ?? named2 ?? "?";
+    return `(NOW() + (CAST(${token} AS integer) * INTERVAL '1 ${unit}'))`;
+  });
+  text = text.replace(/CASE\s+WHEN\s+(@[A-Za-z_][A-Za-z0-9_]*|:[A-Za-z_][A-Za-z0-9_]*|\?)\s+IS\s+NULL/gi, (_match, token) => {
+    return `CASE WHEN CAST(${token} AS text) IS NULL`;
+  });
+  text = text.replace(/COLLATE\s+NOCASE/gi, "");
+  text = text.replace(/MAX\(([^)]+),\s*([^)]+)\)/gi, "GREATEST($1, $2)");
+
+  if (/\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(text)) {
+    text = text.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, "INSERT INTO");
+    if (!/\bON\s+CONFLICT\b/i.test(text)) {
+      text += " ON CONFLICT DO NOTHING";
+    }
+  }
+
+  if (mode === "run" && /^\s*INSERT\b/i.test(text) && !/\bRETURNING\b/i.test(text)) {
+    text += " RETURNING id";
+  }
+
+  if (params.length === 1 && isPlainObject(params[0])) {
+    const object = params[0] as Record<string, unknown>;
+    let index = 0;
+    text = text.replace(/@([A-Za-z_][A-Za-z0-9_]*)|:([A-Za-z_][A-Za-z0-9_]*)/g, (_match, named1, named2) => {
+      index += 1;
+      const key = named1 ?? named2 ?? "";
+      bindValues.push(object[key]);
+      return `$${index}`;
+    });
+    text = text.replace(/\?/g, () => {
+      const indexValue = bindValues.length + 1;
+      const next = Object.values(object)[indexValue - 1];
+      bindValues.push(next);
+      return `$${indexValue}`;
+    });
+  } else {
+    let index = 0;
+    text = text.replace(/\?/g, () => {
+      index += 1;
+      return `$${index}`;
+    });
+    bindValues.push(...params);
+  }
+
+  text = text.replace(/SELECT\s+value\s+FROM\s+json_each\(\$([0-9]+)\)/gi, (_, index) => `SELECT (jsonb_array_elements_text(CAST($${index} AS jsonb)))::bigint`);
+  text = text.replace(/json_each\(\$([0-9]+)\)/gi, (_, index) => `jsonb_array_elements_text(CAST($${index} AS jsonb))`);
+
+
+  return { text, values: bindValues };
+}
+
+function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all" | "run" | "exec") {
+  const { text, values } = normalizePostgresSql(sql, params, mode);
+  const script = `
+    try { require("node:dns").setDefaultResultOrder("ipv4first"); } catch {}
+    const { Client } = require("pg");
+    const fs = require("node:fs");
+    (async () => {
+      const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+      const client = new Client({
+        connectionString: process.env.SUPABASE_DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 10000,
+      });
+      await client.connect();
+      try {
+        const result = await client.query(payload.text, payload.values ?? []);
+        let output;
+        if (payload.mode === "run") {
+          output = {
+            lastInsertRowid: result.rows?.[0]?.id != null ? Number(result.rows[0].id) : null,
+            changes: result.rowCount ?? 0,
+          };
+        } else if (payload.mode === "get") {
+          output = result.rows?.[0] ?? null;
+        } else if (payload.mode === "all") {
+          output = result.rows ?? [];
+        } else {
+          output = { ok: true, rowCount: result.rowCount ?? 0 };
+        }
+        process.stdout.write(JSON.stringify({ ok: true, data: output }));
+      } finally {
+        await client.end().catch(() => {});
+      }
+    })().catch((err) => {
+      let msg = (err && err.message) || "Supabase query failed";
+      if (msg.includes("ETIMEDOUT") && process.env.SUPABASE_DATABASE_URL && process.env.SUPABASE_DATABASE_URL.includes("db.")) {
+        msg += " (Direct Supabase connections are IPv6-only. Use the Supabase Connection Pooler URL with port 6543/5432 for IPv4 compatibility).";
+      }
+      process.stdout.write(JSON.stringify({ ok: false, message: msg }));
+      process.exitCode = 1;
+    });
+
+  `;
+
+  const resolvedPgPath = (() => {
+    try {
+      return path.dirname(path.dirname(requireFromFile.resolve("pg")));
+    } catch {
+      return "";
+    }
+  })();
+  const nodePath = [
+    path.join(process.cwd(), "node_modules"),
+    resolvedPgPath,
+    process.env.NODE_PATH,
+  ].filter(Boolean).join(path.delimiter);
+
+  const child = spawnSync(process.execPath, ["-e", script], {
+    cwd: process.cwd(),
+    input: JSON.stringify({ text, values, mode }),
+    encoding: "utf8",
+    maxBuffer: 50 * 1024 * 1024,
+    timeout: 30000,
+    env: { ...process.env, NODE_PATH: nodePath, SUPABASE_DATABASE_URL: ENV.supabase.databaseUrl },
+  });
+
+  if (child.error) throw child.error;
+  if ((child.status ?? 0) !== 0) {
+    throw new Error(child.stderr?.trim() || child.stdout?.trim() || "Supabase query failed.");
+  }
+
+  const output = JSON.parse(child.stdout || "{\"ok\":true,\"data\":null}");
+  if (!output.ok) throw new Error(output.message || "Supabase query failed.");
+  return output.data;
+}
 
 /**
  * Default private storage folder for an app running in `cwd`: ./storage, except
@@ -47,55 +212,81 @@ export const PRIVATE_BOOKS_DIR = path.join(/*turbopackIgnore: true*/ STORAGE_DIR
  * Built in, so deploying needs no native module compiled with Python / node-gyp.
  */
 class Statement {
-  constructor(private readonly stmt: StatementSync) {
-    // Callers pass whole records (e.g. { ...order, ref }); fields the SQL doesn't use are ignored.
-    stmt.setAllowUnknownNamedParameters(true);
+  constructor(private readonly stmt: SqliteStatementSync | null, private readonly sql: string | null, private readonly db: Database | null) {
+    if (this.stmt) {
+      this.stmt.setAllowUnknownNamedParameters(true);
+    }
   }
 
   run(...params: unknown[]) {
-    return this.stmt.run(...(params as SQLInputValue[]));
+    if (this.db && this.db.isSupabaseMode()) {
+      return executeSupabaseQuery(this.sql ?? "", params, "run");
+    }
+    return (this.stmt as SqliteStatementSync).run(...(params as SQLInputValue[]));
   }
 
-  // Rows are copied to plain objects: node:sqlite's null-prototype rows can't be passed to Client Components.
   get(...params: unknown[]): unknown {
-    const row = this.stmt.get(...(params as SQLInputValue[]));
+    if (this.db && this.db.isSupabaseMode()) {
+      return executeSupabaseQuery(this.sql ?? "", params, "get");
+    }
+    const row = (this.stmt as SqliteStatementSync).get(...(params as SQLInputValue[]));
     return row && { ...row };
   }
 
   all(...params: unknown[]): unknown[] {
-    return this.stmt.all(...(params as SQLInputValue[])).map((row) => ({ ...row }));
+    if (this.db && this.db.isSupabaseMode()) {
+      return executeSupabaseQuery(this.sql ?? "", params, "all") as unknown[];
+    }
+    return (this.stmt as SqliteStatementSync).all(...(params as SQLInputValue[])).map((row) => ({ ...row }));
   }
 }
 
 export class Database {
-  private readonly db: DatabaseSync;
+  private readonly db?: SqliteDatabaseSync;
+  private readonly databaseFile?: string;
   private depth = 0;
 
-  constructor(file: string) {
-    this.db = new DatabaseSync(file);
+  constructor(file?: string) {
+    this.databaseFile = file;
+    if (ENV.database.driver !== "supabase" || !ENV.supabase.databaseUrl) {
+      const sqlite = getSqliteModule();
+      this.db = new sqlite.DatabaseSync(file ?? path.join(STORAGE_DIR, "orders.db"));
+    }
+  }
+
+  isSupabaseMode(): boolean {
+    return ENV.database.driver === "supabase" && !!ENV.supabase.databaseUrl;
   }
 
   prepare(sql: string): Statement {
-    return new Statement(this.db.prepare(sql));
+    if (this.isSupabaseMode()) return new Statement(null, sql, this);
+    return new Statement(this.db!.prepare(sql), sql, null);
   }
 
   exec(sql: string): void {
-    this.db.exec(sql);
+    if (this.isSupabaseMode()) {
+      executeSupabaseQuery(sql, [], "exec");
+      return;
+    }
+    this.db!.exec(sql);
   }
 
   /** Wraps `fn` in BEGIN … COMMIT (a savepoint when nested); rolls back and rethrows if it throws. */
   transaction<T>(fn: () => T): () => T {
+    if (this.isSupabaseMode()) {
+      return () => fn();
+    }
+
     return () => {
       const savepoint = this.depth > 0 ? `sp${this.depth}` : null;
-      this.db.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN");
+      this.db!.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN");
       this.depth++;
       try {
         const result = fn();
-        this.db.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
+        this.db!.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
         return result;
       } catch (err) {
-        // SQLite may already have rolled back on its own (e.g. disk full).
-        if (this.db.isTransaction) this.db.exec(savepoint ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+        if (this.db!.isTransaction) this.db!.exec(savepoint ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
         throw err;
       } finally {
         this.depth--;
@@ -105,17 +296,32 @@ export class Database {
 
   /** Online backup to `file`: a consistent snapshot that includes changes still in the -wal file. */
   async backup(file: string): Promise<void> {
-    await backup(this.db, file);
+    if (this.isSupabaseMode()) {
+      const script = `
+        const { execFileSync } = require("node:child_process");
+        const url = process.env.SUPABASE_DATABASE_URL;
+        if (!url) process.exit(1);
+        execFileSync("pg_dump", [url, "--file", ${JSON.stringify(file)}, "--clean", "--if-exists"], { stdio: "inherit" });
+      `;
+      spawnSync(process.execPath, ["-e", script], { env: { ...process.env, SUPABASE_DATABASE_URL: ENV.supabase.databaseUrl }, encoding: "utf8" });
+      return;
+    }
+    const sqlite = getSqliteModule();
+    await sqlite.backup(this.db!, file);
   }
 
   close(): void {
-    this.db.close();
+    if (this.db) this.db.close();
   }
 }
 
 const globalForDb = globalThis as unknown as { __hmDb?: Database };
 
 function open(): Database {
+  if (ENV.database.driver === "supabase" && !!ENV.supabase.databaseUrl) {
+    return new Database();
+  }
+
   for (const dir of [STORAGE_DIR, SCREENSHOT_DIR, PRIVATE_BOOKS_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
   }

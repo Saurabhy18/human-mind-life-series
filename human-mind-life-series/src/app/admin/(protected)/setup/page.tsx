@@ -64,10 +64,10 @@ export default async function AdminSetupPage() {
     { key: "YOUTUBE_URL", ok: !isPlaceholder(CONFIG.YOUTUBE_URL), hint: "Hidden on the live site until set." },
   ];
 
-  // Paid books can be ordered only when their PDF is present AND opens as a valid PDF.
+  // Books can be ordered or delivered only when their PDF is present AND opens as a valid PDF.
   const pdfs = [
     ...(await Promise.all(getAllProducts().map(async (p) => ({ slug: p.slug, label: p.label, ok: await bookDeliverable(p.slug) })))),
-    ...FREE_BOOKS.map((b) => ({ slug: b.slug, label: `${b.label} (FREE)`, ok: fs.existsSync(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${b.slug}.pdf`)) })),
+    ...(await Promise.all(FREE_BOOKS.map(async (b) => ({ slug: b.slug, label: `${b.label} (FREE)`, ok: await bookDeliverable(b.slug) })))),
   ];
   const done = checks.filter((c) => c.ok).length;
 

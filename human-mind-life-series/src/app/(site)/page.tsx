@@ -7,6 +7,7 @@ import { paymentCopy } from "@/content/paymentCopy";
 import { checkoutMode } from "@/lib/server/paymentService";
 import { PACKAGES } from "@/config/packages";
 import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
+import { getSiteCatalog } from "@/lib/server/books";
 import { countWord } from "@/lib/text";
 import { faqSchema, organizationSchema, pageMetadata, seriesSchema } from "@/lib/seo";
 import { BookCard } from "@/components/BookCard";
@@ -19,6 +20,8 @@ import { AuthorsGrid } from "@/components/AuthorBlock";
 import { SectionHeading } from "@/components/PageHeader";
 import { IconArrowRight, IconBook, IconCheck, IconPhone, IconQr, IconShield } from "@/components/icons";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = pageMetadata({
   title: `${CONFIG.SITE_NAME} — Psychology, Human Behaviour & Personal Growth Books`,
   description:
@@ -28,15 +31,17 @@ export const metadata: Metadata = pageMetadata({
 });
 
 export default function HomePage() {
+  const { allBooks, paidBooks, freeBooks } = getSiteCatalog();
   const mode = checkoutMode();
   const pay = paymentCopy(mode);
   const faqs = getGeneralFaqs(mode).slice(0, 6);
-  const [v1, v2, v3, v4, v5] = ALL_BOOKS;
-  const freeBook = FREE_BOOKS[0];
+  const [heroV1, heroV2, heroV3, heroV4, heroV5] = ALL_BOOKS;
+  const v1 = allBooks[0] || ALL_BOOKS[0];
+  const freeBook = freeBooks[0];
   const stats = [
-    { n: ALL_BOOKS.length, label: "Volumes" },
-    { n: PAID_BOOKS.length, label: PAID_BOOKS.length === 1 ? "Paid Book" : "Paid Books" },
-    ...(FREE_BOOKS.length ? [{ n: FREE_BOOKS.length, label: FREE_BOOKS.length === 1 ? "Free Book" : "Free Books" }] : []),
+    { n: allBooks.length, label: "Volumes" },
+    { n: paidBooks.length, label: paidBooks.length === 1 ? "Paid Book" : "Paid Books" },
+    ...(freeBooks.length ? [{ n: freeBooks.length, label: freeBooks.length === 1 ? "Free Book" : "Free Books" }] : []),
   ];
 
   return (
@@ -45,7 +50,7 @@ export default function HomePage() {
         data={[
           organizationSchema(),
           { "@context": "https://schema.org", "@type": "WebSite", name: CONFIG.SITE_NAME, url: SITE_URL },
-          seriesSchema(ALL_BOOKS),
+          seriesSchema(allBooks),
           faqSchema(faqs),
         ]}
       />
@@ -81,7 +86,7 @@ export default function HomePage() {
 
           {/* Fanned stack of covers */}
           <div className="relative mx-auto h-[340px] w-full max-w-[460px] animate-fade-up [animation-delay:150ms] sm:h-[440px]" aria-hidden="true">
-            {[v4, v2, v5, v3, v1].map((b, i) => {
+            {[heroV4, heroV2, heroV5, heroV3, heroV1].map((b, i) => {
               const pos = [
                 "left-[2%] top-[14%] w-[30%] -rotate-[10deg]",
                 "left-[14%] top-[8%] w-[34%] -rotate-[5deg]",
@@ -153,9 +158,9 @@ export default function HomePage() {
             View all books <IconArrowRight width={16} />
           </Link>
         </div>
-        <OfferCountdown variant="banner" scope={volumeRange(PAID_BOOKS)} className="mt-10" />
+        <OfferCountdown variant="banner" scope={volumeRange(paidBooks)} className="mt-10" />
         <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {ALL_BOOKS.slice(0, 3).map((b) => (
+          {allBooks.slice(0, 3).map((b) => (
             <BookCard key={b.slug} book={b} />
           ))}
         </div>
@@ -165,7 +170,7 @@ export default function HomePage() {
       <section className="bg-cream/70 py-20 sm:py-24">
         <div className="container-page grid gap-12 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="lg:sticky lg:top-28 lg:self-start">
-            <SectionHeading eyebrow={`The ${countWord(ALL_BOOKS.length)}-Volume Series`} title="One journey through the human mind and life" />
+            <SectionHeading eyebrow={`The ${countWord(allBooks.length)}-Volume Series`} title="One journey through the human mind and life" />
             <div className="mt-5 space-y-4 text-lg leading-relaxed text-muted">
               {SERIES.longDescription.map((p) => (
                 <p key={p}>{p}</p>
@@ -173,7 +178,7 @@ export default function HomePage() {
             </div>
           </div>
           <ol className="space-y-4">
-            {ALL_BOOKS.map((b) => (
+            {allBooks.map((b) => (
               <li key={b.slug}>
                 <Link href={`/books/${b.slug}`} className="card lift group flex items-center gap-5 p-4 sm:gap-6 sm:p-5">
                   <div className="w-16 shrink-0 sm:w-20">

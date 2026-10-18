@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ success: false, message: "Invalid request." }, { status: 400 });
   }
-  const order = authorizeOrder(body.orderId, req.headers.get("x-order-token"));
+  const order = await authorizeOrder(body.orderId, req.headers.get("x-order-token"));
   if (!order) return NextResponse.json({ success: false, message: "Order not found." }, { status: 404 });
   try {
     await syncGatewayPayment(order);

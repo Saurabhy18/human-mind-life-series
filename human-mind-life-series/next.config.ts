@@ -1,5 +1,13 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import dns from "node:dns";
+
+// Prefer IPv4 first to prevent network timeouts on networks/ISPs with broken or unreachable IPv6 routes
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Ignore in environments where setDefaultResultOrder is unavailable
+}
 
 const isProd = process.env.NODE_ENV === "production";
 // Cashfree's hosted checkout (JS SDK + modal iframe) is only allowed when it is actually switched on.
@@ -54,7 +62,7 @@ const nextConfig: NextConfig = {
     "/**": ["./storage/**/*"],
   },
   // Server-only packages loaded from node_modules at runtime instead of being bundled.
-  serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
+  serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer", "pg"],
   turbopack: {
     // Pin the Turbopack root to THIS app directory. Hostinger deploys the repo
     // root (which contains this app in a subfolder), so without this Turbopack

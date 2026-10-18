@@ -90,12 +90,19 @@ export function getOrderItems(orderId: number): OrderItem[] {
   return getDb().prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY position, id").all(orderId) as OrderItem[];
 }
 
-/** The ebooks of many orders in one query (admin lists and exports). */
 export function itemsForOrders(orderIds: number[]): Map<number, OrderItem[]> {
   const out = new Map<number, OrderItem[]>();
   if (!orderIds.length) return out;
-  const rows = getDb().prepare("SELECT * FROM order_items WHERE order_id IN (SELECT value FROM json_each(?)) ORDER BY order_id, position, id").all(JSON.stringify(orderIds)) as OrderItem[];
-  for (const r of rows) out.set(r.order_id, [...(out.get(r.order_id) ?? []), r]);
+  const numericIds = orderIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id));
+  if (!numericIds.length) return out;
+  const placeholders = numericIds.map(() => "?").join(", ");
+  const rows = getDb()
+    .prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, position, id`)
+    .all(...numericIds) as OrderItem[];
+  for (const r of rows) {
+    const key = Number(r.order_id);
+    out.set(key, [...(out.get(key) ?? []), r]);
+  }
   return out;
 }
 
@@ -252,6 +259,12 @@ export function countOrdersByStatus(): Record<OrderStatus | "all", number> {
 export function getOrder(id: number): Order | undefined {
   return getDb().prepare("SELECT * FROM orders WHERE id = ?").get(id) as Order | undefined;
 }
+
+export function getOrdersByEmail(email: string): Order[] {
+  if (!email) return [];
+  return getDb().prepare("SELECT * FROM orders WHERE LOWER(email) = LOWER(?) ORDER BY id DESC").all(email.trim()) as Order[];
+}
+
 
 export function getOrderEvents(orderId: number): OrderEvent[] {
   return getDb().prepare("SELECT * FROM order_events WHERE order_id = ? ORDER BY id DESC").all(orderId) as OrderEvent[];

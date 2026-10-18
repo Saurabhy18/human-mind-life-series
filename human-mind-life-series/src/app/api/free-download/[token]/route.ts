@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { NextResponse } from "next/server";
 import { CONFIG } from "@/config/site.config";
-import { getFreeBook } from "@/lib/products";
+import { ENV } from "@/config/env.server";
+import { getDbFreeBook } from "@/lib/server/books";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
 import { consumeDownloadToken, refundDownload } from "@/lib/server/free-requests";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp } from "@/lib/server/request";
+import { getStorage } from "@/lib/server/storageService";
+import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
 
 export const runtime = "nodejs";
 
@@ -32,16 +36,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     return message(410, "This download link has expired or has already been used the maximum number of times. Please request your free copy again from the book page.");
   }
 
-  // Only slugs of free books from the catalogue are accepted, which also prevents path tricks.
-  const book = getFreeBook(request.book_slug);
+  // Only slugs of free books from the catalogue or DB are accepted, which also prevents path tricks.
+  const book = getDbFreeBook(request.book_slug);
   if (!book) {
     refundDownload(request.id);
     return message(404, "This book is no longer available.");
   }
 
   try {
-    const data = await fs.readFile(path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${book.slug}.pdf`));
     const fileName = `${book.label.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "")}.pdf`;
+    const storageKey = book.pdfFilename || `${book.slug}.pdf`;
+
+    if (ENV.storage.driver === "supabase") {
+      try {
+        const url = await getStorage().signedUrl(storageKey, {
+          ttlSeconds: CONFIG.FREE_DOWNLOAD_LINK_HOURS * 3600,
+          downloadName: fileName,
+        });
+        return NextResponse.redirect(url, 302);
+      } catch (e) {
+        console.warn("[free-download] Supabase signedUrl failed, falling back to local file:", e);
+      }
+    }
+
+    await ensureBookSource(book.slug);
+    const source = getBookSource(book.slug);
+    const targetPath = source ? source.filePath : path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, storageKey);
+    const data = await fs.readFile(targetPath);
     return new Response(new Uint8Array(data), {
       headers: {
         ...PRIVATE_HEADERS,

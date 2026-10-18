@@ -8,7 +8,7 @@ const name = z
   .trim()
   .min(2, "Please enter your full name.")
   .max(80, "Name is too long.")
-  .regex(/^[\p{L}\p{M} .'-]+$/u, "Please use letters only in your name.");
+  .regex(/^[\p{L}\p{M}\p{N} .'-]+$/u, "Please enter a valid name.");
 
 const email = z.string().trim().toLowerCase().max(120).email("Please enter a valid email address.");
 

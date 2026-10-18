@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
+import { createClient } from "@/lib/supabase/server";
+
 
 const COOKIE_NAME = "hm_admin";
 const SESSION_HOURS = 8;
@@ -52,15 +54,53 @@ export async function destroySession(): Promise<void> {
   (await cookies()).delete(COOKIE_NAME);
 }
 
+
 export async function isAdmin(): Promise<boolean> {
   const key = secretKey();
   const token = (await cookies()).get(COOKIE_NAME)?.value;
-  if (!key || !token) return false;
+  if (key && token) {
+    try {
+      const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
+      if (payload.role === "admin") return true;
+    } catch {
+      // not a legacy admin session, check Supabase auth below
+    }
+  }
+
+  // Check Supabase authenticated session
   try {
-    const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
-    return payload.role === "admin";
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile?.role === "admin") {
+        return true;
+      }
+    }
+  } catch {}
+
+  return false;
+}
+
+
+/** Returns the currently authenticated Supabase user or null if not logged in. */
+export async function getAuthenticatedUser() {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
 
