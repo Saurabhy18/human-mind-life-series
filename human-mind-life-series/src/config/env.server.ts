@@ -114,8 +114,17 @@ export const ENV = {
   payment: (() => {
     // Live Cashfree is used ONLY when NODE_ENV=production AND CASHFREE_ENV=production.
     // Everywhere else (local, preview, tests) we are pinned to sandbox, so no real money can move.
+    const explicitEnv = str("CASHFREE_ENV").toLowerCase();
+    const clientId = str("CASHFREE_CLIENT_ID");
+    const isTestKey = clientId.toLowerCase().startsWith("test");
     const cashfreeEnv: "sandbox" | "production" =
-      str("CASHFREE_ENV", isProd ? "production" : "sandbox").toLowerCase() === "production" && isProd ? "production" : "sandbox";
+      explicitEnv === "production"
+        ? "production"
+        : explicitEnv === "sandbox"
+          ? "sandbox"
+          : isTestKey
+            ? "sandbox"
+            : (isProd ? "production" : "sandbox");
     const defaultApiBase = cashfreeEnv === "production" ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg";
     return {
       provider: paymentProvider(),

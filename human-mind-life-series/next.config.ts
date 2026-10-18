@@ -62,7 +62,7 @@ const nextConfig: NextConfig = {
     "/**": ["./storage/**/*"],
   },
   // Server-only packages loaded from node_modules at runtime instead of being bundled.
-  serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer"],
+  serverExternalPackages: ["@google-cloud/translate", "@google-cloud/storage", "pdfjs-dist", "pdf-lib", "playwright-core", "nodemailer", "pg"],
   turbopack: {
     // Pin the Turbopack root to THIS app directory. Hostinger deploys the repo
     // root (which contains this app in a subfolder), so without this Turbopack

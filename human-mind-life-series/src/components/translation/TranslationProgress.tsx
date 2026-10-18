@@ -63,7 +63,6 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
   }, []);
 
   const load = useCallback(async () => {
-    if (!token) return;
     try {
       // While a gateway payment is still unresolved, re-ask the SERVER to confirm with Cashfree on each
       // poll (the webhook may be delayed, or — in local dev — unable to reach this machine). Once the
@@ -72,9 +71,13 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       const reverify = gateway && !paymentResolved.current && verifyTries.current < 60;
       if (reverify) verifyTries.current += 1;
       const url = reverify ? "/api/payment/verify" : `/api/orders/${orderRef}/status`;
+      const headers: Record<string, string> = {};
+      if (token) headers["x-order-token"] = token;
+      if (reverify) headers["Content-Type"] = "application/json";
+
       const res = reverify
-        ? await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-order-token": token }, body: JSON.stringify({ orderId: orderRef }) })
-        : await fetch(url, { headers: { "x-order-token": token }, cache: "no-store" });
+        ? await fetch(url, { method: "POST", headers, body: JSON.stringify({ orderId: orderRef }) })
+        : await fetch(url, { headers, cache: "no-store" });
       const json = (await res.json()) as Status & { success?: boolean; message?: string };
       if (!res.ok || !json.success) {
         setError(json.message ?? "We could not find this order.");
@@ -95,7 +98,6 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
   }, [load]);
 
   useEffect(() => {
-    if (!token) return;
     const first = setTimeout(load, 0);
     const id = setInterval(() => {
       setStatus((s) => {
@@ -107,21 +109,20 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       clearTimeout(first);
       clearInterval(id);
     };
-  }, [token, load]);
+  }, [load]);
 
-  if (hydrated && !token && !error) {
-    return (
-      <div className="card p-8 text-center">
-        <p className="text-lg">This link is incomplete. Please open the link from your email or the confirmation page.</p>
-        <Link href="/contact" className="btn-outline mt-6">Contact us</Link>
-      </div>
-    );
-  }
   if (error) {
     return (
-      <div className="card p-8 text-center">
-        <p className="text-lg">{error}</p>
-        <Link href="/contact" className="btn-outline mt-6">Contact us</Link>
+      <div className="card p-8 text-center space-y-4">
+        <p className="text-xl font-serif text-ink">{error}</p>
+        <p className="text-sm text-muted max-w-md mx-auto">
+          If you placed this order while logged in, please make sure you are signed into your account. You can also view all your purchases directly in your dashboard.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Link href="/dashboard" className="btn-primary px-5 py-2.5">Go to Dashboard</Link>
+          <Link href="/books" className="btn-outline px-5 py-2.5">Browse Books</Link>
+          <Link href="/contact" className="btn-outline px-5 py-2.5">Contact Support</Link>
+        </div>
       </div>
     );
   }
@@ -179,7 +180,7 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
               </p>
               {paid && <ItemState item={item} />}
             </div>
-            {paid && item.stage === "READY" && token && (
+            {paid && item.stage === "READY" && (
               <div className="sm:w-56">
                 <DownloadButton orderRef={status.orderId} itemId={item.itemId} token={token} remaining={item.downloadsRemaining} onDone={load} />
                 {item.accessExpiresAt && (
@@ -198,6 +199,18 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
           <IconClock width={16} /> You can close this page — we will email you when your {many ? "ebooks are" : "ebook is"} ready.
         </p>
       )}
+
+      <div className="mt-8 pt-6 border-t border-line flex flex-wrap items-center justify-center gap-3">
+        <Link href="/dashboard" className="btn-primary px-5 py-2.5 text-center">
+          Go to Dashboard
+        </Link>
+        <Link href="/books" className="btn-outline px-5 py-2.5 text-center">
+          Browse Books
+        </Link>
+        <Link href="/" className="btn-outline px-5 py-2.5 text-center">
+          Home
+        </Link>
+      </div>
     </div>
   );
 }

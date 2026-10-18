@@ -91,6 +91,19 @@ export async function isAdmin(): Promise<boolean> {
 }
 
 
+/** Returns the currently authenticated Supabase user or null if not logged in. */
+export async function getAuthenticatedUser() {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Call at the top of every admin page, server action and admin API route. */
 export async function requireAdmin(): Promise<void> {
   if (!(await isAdmin())) redirect("/admin/login");

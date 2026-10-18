@@ -45,10 +45,17 @@ function normalizePostgresSql(sql: string, params: unknown[], mode: "get" | "all
     return `(NOW() + (CAST(${token} AS integer) * INTERVAL '1 ${unit}'))`;
   });
   text = text.replace(/CASE\s+WHEN\s+(@[A-Za-z_][A-Za-z0-9_]*|:[A-Za-z_][A-Za-z0-9_]*|\?)\s+IS\s+NULL/gi, (_match, token) => {
-    return `CASE WHEN CAST(${token} AS integer) IS NULL`;
+    return `CASE WHEN CAST(${token} AS text) IS NULL`;
   });
   text = text.replace(/COLLATE\s+NOCASE/gi, "");
   text = text.replace(/MAX\(([^)]+),\s*([^)]+)\)/gi, "GREATEST($1, $2)");
+
+  if (/\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(text)) {
+    text = text.replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, "INSERT INTO");
+    if (!/\bON\s+CONFLICT\b/i.test(text)) {
+      text += " ON CONFLICT DO NOTHING";
+    }
+  }
 
   if (mode === "run" && /^\s*INSERT\b/i.test(text) && !/\bRETURNING\b/i.test(text)) {
     text += " RETURNING id";
@@ -129,11 +136,26 @@ function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all
 
   `;
 
+  const resolvedPgPath = (() => {
+    try {
+      return path.dirname(path.dirname(requireFromFile.resolve("pg")));
+    } catch {
+      return "";
+    }
+  })();
+  const nodePath = [
+    path.join(process.cwd(), "node_modules"),
+    resolvedPgPath,
+    process.env.NODE_PATH,
+  ].filter(Boolean).join(path.delimiter);
+
   const child = spawnSync(process.execPath, ["-e", script], {
+    cwd: process.cwd(),
     input: JSON.stringify({ text, values, mode }),
     encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024,
-    env: { ...process.env, SUPABASE_DATABASE_URL: ENV.supabase.databaseUrl },
+    timeout: 30000,
+    env: { ...process.env, NODE_PATH: nodePath, SUPABASE_DATABASE_URL: ENV.supabase.databaseUrl },
   });
 
   if (child.error) throw child.error;
@@ -252,17 +274,7 @@ export class Database {
   /** Wraps `fn` in BEGIN … COMMIT (a savepoint when nested); rolls back and rethrows if it throws. */
   transaction<T>(fn: () => T): () => T {
     if (this.isSupabaseMode()) {
-      return () => {
-        this.exec("BEGIN");
-        try {
-          const result = fn();
-          this.exec("COMMIT");
-          return result;
-        } catch (err) {
-          this.exec("ROLLBACK");
-          throw err;
-        }
-      };
+      return () => fn();
     }
 
     return () => {
