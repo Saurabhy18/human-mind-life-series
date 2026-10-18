@@ -30,8 +30,8 @@ export function DownloadButton({ orderRef, itemId, token, remaining, onDone }: {
 
   return (
     <div>
-      <button type="button" onClick={download} disabled={busy || remaining <= 0} className="btn-free w-full py-3 text-base">
-        {busy ? "Preparing download…" : "Download PDF"}
+      <button type="button" onClick={download} disabled={busy || remaining <= 0} className="btn-free w-full py-3 text-base font-semibold">
+        {busy ? "Preparing download…" : "Download Your Book"}
       </button>
       {message && <p className="mt-2 text-sm text-danger">{message}</p>}
     </div>

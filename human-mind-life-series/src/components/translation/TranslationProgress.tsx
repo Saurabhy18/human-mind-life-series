@@ -150,7 +150,7 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
             : status.stage === "PAYMENT_FAILED"
               ? "Payment Failed"
               : allReady
-                ? `Your ${many ? "ebooks are" : "ebook is"} ready! ✓`
+                ? `Payment Successful! Your ${many ? "eBooks are" : "eBook is"} Ready to Download`
                 : "Thank you for your purchase."}
         </h2>
 
@@ -196,7 +196,7 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
 
       {paid && working && (
         <p className="mt-5 flex items-center justify-center gap-2 text-center text-sm text-muted">
-          <IconClock width={16} /> You can close this page — we will email you when your {many ? "ebooks are" : "ebook is"} ready.
+          <IconClock width={16} /> Download each ebook here as soon as it is ready. If you close this page, we will also email you a recovery link.
         </p>
       )}
 
@@ -247,7 +247,7 @@ function ItemState({ item }: { item: Item }) {
     );
   }
   if (item.stage === "FAILED") return <p className="mt-1 text-sm text-danger">We could not prepare this language version yet. Please try again later — our team has been notified, and you don&apos;t need to pay again.</p>;
-  if (item.stage === "MANUAL_DELIVERY") return <p className="mt-1 text-sm text-muted">This ebook will be sent to your email / WhatsApp.</p>;
+  if (item.stage === "MANUAL_DELIVERY") return <p className="mt-1 text-sm text-muted">This ebook is being finalized for download. We will make it available here and notify you by email shortly.</p>;
   if (item.stage === "EXPIRED") return <p className="mt-1 text-sm text-muted">The download period for this ebook has ended. Please contact us with your order reference and we will help.</p>;
   return null;
 }

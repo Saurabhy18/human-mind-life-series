@@ -103,8 +103,8 @@ export default async function BooksPage() {
           <li className="flex gap-4">
             <IconMail className="mt-1 shrink-0 text-gold-dark" />
             <div>
-              <h3 className="font-sans text-sm font-semibold">Delivered to you</h3>
-              <p className="mt-1 text-sm text-muted">Your {CONFIG.BOOK_FORMAT} is sent to your email or WhatsApp.</p>
+              <h3 className="font-sans text-sm font-semibold">Instant download</h3>
+              <p className="mt-1 text-sm text-muted">Download your {CONFIG.BOOK_FORMAT} straight from your order page after payment.</p>
             </div>
           </li>
         </ul>

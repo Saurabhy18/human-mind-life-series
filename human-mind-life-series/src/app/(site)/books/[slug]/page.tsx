@@ -132,7 +132,7 @@ export default async function BookPage({ params }: Props) {
                     <p className="text-sm text-muted">Price</p>
                     <p className="font-serif text-4xl"><BookPrice book={book} size="lg" /></p>
                   </div>
-                  <p className="text-sm text-muted">{CONFIG.BOOK_FORMAT} · Delivered by email / WhatsApp</p>
+                  <p className="text-sm text-muted">{CONFIG.BOOK_FORMAT} · Instant download after payment</p>
                 </div>
                 <OfferCountdown className="mt-5" />
                 <div className="mt-6">

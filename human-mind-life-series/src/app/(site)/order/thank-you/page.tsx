@@ -67,7 +67,7 @@ export default async function ThankYouPage({ searchParams }: Props) {
             <IconMail className="mt-0.5 shrink-0 text-gold-dark" />
             <div>
               <h2 className="font-sans text-sm font-semibold">Delivery</h2>
-              <p className="mt-1 text-sm text-muted">Your {CONFIG.BOOK_FORMAT} will be ready {CONFIG.DELIVERY_TIMEFRAME}. Download it from your order page, or we will send it to your email / WhatsApp.</p>
+              <p className="mt-1 text-sm text-muted">Your {CONFIG.BOOK_FORMAT} will be ready {CONFIG.DELIVERY_TIMEFRAME}. Download it directly from your order page; we may also email you a recovery link as a backup.</p>
             </div>
           </div>
         </div>
