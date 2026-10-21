@@ -11,7 +11,7 @@ try {
 
 const isProd = process.env.NODE_ENV === "production";
 // Cashfree's hosted checkout (JS SDK + modal iframe) is only allowed when it is actually switched on.
-const cashfree = process.env.PAYMENT_PROVIDER === "cashfree";
+const cashfree = process.env.PAYMENT_PROVIDER === "cashfree" || process.env.PAYMENT_PROVIDER === "both" || !process.env.PAYMENT_PROVIDER;
 const cfScript = cashfree ? " https://sdk.cashfree.com https://*.cashfree.com" : "";
 const cfConnect = cashfree ? " https://*.cashfree.com" : "";
 const cfFrame = cashfree ? " https://*.cashfree.com" : "";

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isSupportedNodeVersion } from '../src/lib/runtime';
 
 describe('node version checks', () => {
-  it('rejects Node 22 and earlier for SQLite-backed features', () => {
+  it('rejects Node 22 and earlier', () => {
     expect(isSupportedNodeVersion('22.12.0')).toBe(false);
   });
 

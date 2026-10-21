@@ -22,14 +22,18 @@ const paise = (rupees: number | string) => Math.round(Number(rupees) * 100);
 const sameAmount = (a: number | string, b: number | string) => paise(a) === paise(b);
 
 function cashfreeConfigured() {
-  return ENV.payment.provider === "cashfree" && !!(ENV.payment.cashfreeClientId && ENV.payment.cashfreeSecretKey);
+  return (ENV.payment.provider === "cashfree" || ENV.payment.provider === "both") && !!(ENV.payment.cashfreeClientId && ENV.payment.cashfreeSecretKey);
+}
+
+export function upiEnabled(): boolean {
+  return ENV.payment.provider === "manual_upi" || ENV.payment.provider === "both";
 }
 
 export function gatewayEnabled(): boolean {
   return cashfreeConfigured();
 }
 
-export type CheckoutMode = "gateway" | "upi" | "closed";
+export type CheckoutMode = "both" | "gateway" | "upi" | "closed";
 
 /**
  * What customers can do at checkout:
@@ -38,8 +42,12 @@ export type CheckoutMode = "gateway" | "upi" | "closed";
  *  - closed:  anything else (the default) — no orders or payments are accepted
  */
 export function checkoutMode(): CheckoutMode {
-  if (gatewayEnabled()) return "gateway";
-  return ENV.payment.provider === "manual_upi" ? "upi" : "closed";
+  const gw = gatewayEnabled();
+  const upi = upiEnabled();
+  if (gw && upi) return "both";
+  if (gw) return "gateway";
+  if (upi) return "upi";
+  return "closed";
 }
 
 /** Thin Cashfree PG REST client with retry on transient network/gateway timeouts. Never logs secrets. */

@@ -137,6 +137,9 @@ export function invalidateDbBooksCache() {
  * List all books from the database
  */
 export function listDbBooks(): DbBook[] {
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return [];
+  }
   if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
     return cachedDbBooks.books;
   }
@@ -159,8 +162,9 @@ export function listDbBooks(): DbBook[] {
  * Get a single book by slug
  */
 export function getDbBookBySlug(slug: string): DbBook | undefined {
-  if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
-    const found = cachedDbBooks.books.find((b) => b.slug === slug);
+  const books = listDbBooks();
+  if (books.length > 0) {
+    const found = books.find((b) => b.slug === slug);
     if (found) return found;
   }
   try {
@@ -176,8 +180,9 @@ export function getDbBookBySlug(slug: string): DbBook | undefined {
  * Get a single book by ID
  */
 export function getDbBookById(id: number): DbBook | undefined {
-  if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
-    const found = cachedDbBooks.books.find((b) => b.id === id);
+  const books = listDbBooks();
+  if (books.length > 0) {
+    const found = books.find((b) => b.id === id);
     if (found) return found;
   }
   try {
@@ -488,6 +493,9 @@ export function getSiteCatalog(): { allBooks: Book[]; paidBooks: Book[]; freeBoo
  * Look up a book from the database or fall back to the static catalogue
  */
 export function getBookFromDbOrStatic(slug: string): Book | undefined {
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    return getBook(slug);
+  }
   try {
     const dbBook = getDbBookBySlug(slug);
     if (dbBook) return dbBookToProductBook(dbBook);

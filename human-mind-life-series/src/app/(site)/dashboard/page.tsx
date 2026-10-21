@@ -37,9 +37,25 @@ export default async function DashboardPage() {
 
   let userOrders: Order[] = [];
   try {
-    userOrders = user.email ? getOrdersByEmail(user.email) : [];
+    if (user.email) {
+      const { data: ords, error: ordsErr } = await supabase
+        .from("orders")
+        .select("*")
+        .ilike("email", user.email)
+        .order("id", { ascending: false });
+
+      if (!ordsErr && ords && ords.length > 0) {
+        userOrders = ords as Order[];
+      } else {
+        userOrders = getOrdersByEmail(user.email);
+      }
+    }
   } catch (e) {
-    console.error("Failed to load user orders:", e);
+    try {
+      userOrders = user.email ? getOrdersByEmail(user.email) : [];
+    } catch {
+      userOrders = [];
+    }
   }
 
   return (

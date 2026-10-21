@@ -15,10 +15,10 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
-/** SQLite stores UTC; show it in Indian time. */
-export function formatDate(sqliteUtc: string | null): string {
-  if (!sqliteUtc) return "—";
-  return new Date(sqliteUtc.replace(" ", "T") + "Z").toLocaleString("en-IN", {
+/** Formats UTC timestamp in Indian Standard Time (IST). */
+export function formatDate(utcStr: string | null): string {
+  if (!utcStr) return "—";
+  return new Date(utcStr.includes("T") ? utcStr : (utcStr.replace(" ", "T") + "Z")).toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",

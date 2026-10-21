@@ -29,11 +29,11 @@ const projectId = str("GOOGLE_CLOUD_PROJECT_ID");
 export type TranslationProvider = "google" | "fake" | "none";
 export type TranslationStrategy = "document" | "text";
 /** none = checkout closed (no payments taken). cashfree = gateway checkout. manual_upi = the older UPI QR + admin verification flow (opt-in only). */
-export type PaymentProvider = "none" | "manual_upi" | "cashfree";
+export type PaymentProvider = "none" | "manual_upi" | "cashfree" | "both";
 
 function paymentProvider(): PaymentProvider {
-  const v = str("PAYMENT_PROVIDER", "manual_upi");
-  return v === "cashfree" || v === "manual_upi" ? v : "manual_upi";
+  const v = str("PAYMENT_PROVIDER", "both").toLowerCase();
+  return (v === "cashfree" || v === "manual_upi" || v === "both" || v === "none") ? (v as PaymentProvider) : "both";
 }
 
 
@@ -44,13 +44,8 @@ function translationProvider(): TranslationProvider {
   return v === "google" && projectId ? "google" : "none";
 }
 
-const supabaseDbConfigured = !!str("SUPABASE_DATABASE_URL");
-const databaseDriverName = str("DB_DRIVER");
-const resolvedDatabaseDriver = databaseDriverName
-  ? (databaseDriverName.toLowerCase() === "supabase" ? "supabase" : "sqlite")
-  : supabaseDbConfigured
-    ? "supabase"
-    : "sqlite";
+export type DatabaseDriver = "supabase";
+const resolvedDatabaseDriver = "supabase" as const;
 
 const storageDriverName = str("STORAGE_DRIVER", "").toLowerCase();
 const storageBucketName = str("SUPABASE_STORAGE_BUCKET", str("BOOK_STORAGE_BUCKET", "site-files"));
@@ -72,8 +67,8 @@ export const ENV = {
   frontendUrl: str("FRONTEND_URL", SITE_URL).replace(/\/$/, ""),
 
   database: {
-    driver: resolvedDatabaseDriver as "sqlite" | "supabase",
-    ready: resolvedDatabaseDriver === "supabase" || !!str("SUPABASE_DATABASE_URL"),
+    driver: "supabase" as const,
+    ready: !!str("SUPABASE_DATABASE_URL"),
   },
 
   supabase: {

@@ -37,14 +37,18 @@ export async function GET() {
 
     let profile: { id?: string; email?: string; full_name?: string; role?: string; created_at?: string } | null = null;
     try {
-      profile = (getDb().prepare("SELECT id, email, full_name, role, created_at FROM profiles WHERE id = ?").get(user.id) as any) ?? null;
-    } catch {
       const { data } = await supabase
         .from("profiles")
         .select("id, email, full_name, role, created_at, updated_at")
         .eq("id", user.id)
         .maybeSingle();
       profile = data ?? null;
+    } catch {}
+
+    if (!profile) {
+      try {
+        profile = (getDb().prepare("SELECT id, email, full_name, role, created_at FROM profiles WHERE id = ?").get(user.id) as any) ?? null;
+      } catch {}
     }
 
     return NextResponse.json(

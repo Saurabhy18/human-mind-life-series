@@ -190,24 +190,18 @@ describe("UPI payment screenshots", () => {
 // ------------------------------------------------------------------ Backups --
 
 describe("Database backup", () => {
-  it("gives the admin a complete, consistent SQLite copy including recent orders", async () => {
+  it("gives the admin a complete, consistent JSON snapshot including recent orders", async () => {
     const o = await createOrder("volume-4", "en", { pay: false });
     session.cookie = await adminJwt();
     const { GET } = await import("@/app/api/admin/backup/route");
     const res = await GET();
     session.cookie = undefined;
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename="orders-backup-\d{12}\.db"/);
-    const bytes = Buffer.from(await res.arrayBuffer());
-    expect(bytes.subarray(0, 16).toString("latin1")).toBe("SQLite format 3\0");
-
-    const file = path.join(os.tmpdir(), `hm-restore-test-${crypto.randomUUID()}.db`);
-    fs.writeFileSync(file, bytes);
-    const { DatabaseSync } = await import("node:sqlite");
-    const copy = new DatabaseSync(file, { readOnly: true });
-    expect(copy.prepare("SELECT ref FROM orders WHERE ref = ?").get(o.ref)).toEqual({ ref: o.ref });
-    copy.close();
-    fs.rmSync(file, { force: true });
+    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename="orders-backup-\d{12}\.json"/);
+    const text = await res.text();
+    const snapshot = JSON.parse(text);
+    expect(Array.isArray(snapshot.orders)).toBe(true);
+    expect(snapshot.orders.some((row: any) => row.ref === o.ref)).toBe(true);
   });
 });
 
@@ -244,3 +238,4 @@ describe("Production configuration", () => {
     expect((await import("@/config/site.config")).SITE_URL_IS_PLACEHOLDER).toBe(true);
   });
 });
+

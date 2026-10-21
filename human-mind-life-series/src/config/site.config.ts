@@ -61,7 +61,7 @@ export const CONFIG = {
    * recompressed. If you use a different file name/type (e.g. .jpg), change
    * this path to match.
    */
-  UPI_QR_CODE: "/images/upi-qr.png",
+  UPI_QR_CODE: "/api/qr",
   /**
    * Shows a "Pay with a UPI app" button on phones (opens GPay/PhonePe/Paytm
    * with amount pre-filled). Some apps restrict such links for personal UPI

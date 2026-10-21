@@ -250,8 +250,11 @@ export function countOrdersByStatus(): Record<OrderStatus | "all", number> {
   }[];
   const counts = { all: 0, pending: 0, verified: 0, rejected: 0, delivered: 0 };
   for (const r of rows) {
-    counts[r.status] = r.n;
-    counts.all += r.n;
+    const n = Number(r.n || 0);
+    if (r.status in counts) {
+      counts[r.status] = n;
+      counts.all += n;
+    }
   }
   return counts;
 }
@@ -297,7 +300,7 @@ export function listMessages(): Message[] {
 }
 
 export function countUnhandledMessages(): number {
-  return (getDb().prepare("SELECT COUNT(*) AS n FROM messages WHERE handled = 0").get() as { n: number }).n;
+  return Number((getDb().prepare("SELECT COUNT(*) AS n FROM messages WHERE handled = 0").get() as { n: number | string })?.n || 0);
 }
 
 export function setMessageHandled(id: number, handled: boolean): void {

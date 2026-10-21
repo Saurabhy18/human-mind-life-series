@@ -30,7 +30,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
   const mode = checkoutMode();
   const deliverable = await Promise.all(allBooks.map((b) => bookDeliverable(b)));
   const upiId = CONFIG.UPI_ID;
-  const qr = mode !== "upi" ? null : upiQrAvailable() ? (
+  const qr = (mode !== "upi" && mode !== "both") ? null : upiQrAvailable() ? (
     <div className="rounded-2xl border border-line bg-white p-3">
       {/* Your original QR file, shown as-is: no regeneration, cropping, resizing service or recompression. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- must be served byte-for-byte unmodified */}
@@ -70,7 +70,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
             initial={{ packageId: pkg.id, books, lang }}
             mode={mode}
             multilingual={translationOffered()}
-            upi={mode === "upi" ? { upiId, upiConfigured: !isPlaceholder(upiId), qr, help: whatsappLink(`Hello, I need help with my payment for ${single?.label ?? pkg.name}.`) } : null}
+            upi={mode === "upi" || mode === "both" ? { upiId, upiConfigured: !isPlaceholder(upiId), qr, help: whatsappLink(`Hello, I need help with my payment for ${single?.label ?? pkg.name}.`) } : null}
           />
         </div>
       </div>
