@@ -60,6 +60,12 @@ export const IconQr = (p: P) => (
     <path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3" />
   </svg>
 );
+export const IconCreditCard = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <line x1="2" y1="10" x2="22" y2="10" />
+  </svg>
+);
 export const IconUpload = (p: P) => (
   <svg {...base} {...p}>
     <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />

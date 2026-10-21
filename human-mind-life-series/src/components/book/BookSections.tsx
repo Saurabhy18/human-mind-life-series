@@ -147,7 +147,18 @@ export function bookFaqs(book: Book, mode: CheckoutMode): FaqItem[] {
       q: "What format is the book in?",
       a: `It is a ${CONFIG.BOOK_FORMAT} that you can read on your phone, tablet or computer.`,
     },
-    ...(mode === "upi"
+    ...(mode === "both"
+      ? [
+          {
+            q: "How do I buy this book?",
+            a: `Click “Buy Now”, review your order (${formatINR(book.price)}), and choose your preferred payment method: pay online instantly with Cashfree (UPI/Cards/Net Banking) or scan our UPI QR code and submit your payment screenshot and UTR number for admin verification.`,
+          },
+          {
+            q: "When will I receive it?",
+            a: `Online payments via Cashfree unlock your ebook downloads immediately. If you pay via UPI QR code, your payment is verified by our admin team and your ebook is unlocked ${CONFIG.DELIVERY_TIMEFRAME}.`,
+          },
+        ]
+      : mode === "upi"
       ? [
           {
             q: "How do I buy this book?",

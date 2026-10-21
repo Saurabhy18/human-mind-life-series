@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_LANGUAGE } from "@/config/languages";
 import { formatMoney, type PackageId, type PurchasePackage, type PurchaseSelection } from "@/config/packages";
 import { useAuth } from "@/components/auth/AuthContext";
-import { IconArrowRight, IconCheck, IconShield } from "../icons";
+import { IconArrowRight, IconCheck, IconCreditCard, IconQr, IconShield } from "../icons";
 import { Price } from "../Price";
 import { ChargedInInrNote } from "../currency/ChargedInInrNote";
 import { OfferCountdown } from "../OfferCountdown";
@@ -32,7 +32,7 @@ type Props = {
   individualPrice: number;
   initial: { packageId: PackageId; books: string[]; lang: string | null };
   /** closed = no payment provider configured: prices can be reviewed, nothing can be paid. */
-  mode: "upi" | "gateway" | "closed";
+  mode: "both" | "gateway" | "upi" | "closed";
   /** False = every ebook is sold in English only (translated editions not switched on). */
   multilingual: boolean;
   upi: UpiSettings | null;
@@ -62,6 +62,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
   const [langs, setLangs] = useState<Record<string, string>>(() => Object.fromEntries(initial.books.map((slug) => [slug, initial.lang ?? DEFAULT_LANGUAGE.code])));
   const languageName = useLanguageNames();
   const [step, setStep] = useState<"choose" | "pay">("choose");
+  const [paymentMethod, setPaymentMethod] = useState<"gateway" | "upi">(mode === "upi" ? "upi" : "gateway");
   /** Why "Proceed to Payment" did not continue (shown in the summary). */
   const [notice, setNotice] = useState("");
   /** Shown next to the book list, e.g. when a 4th book is clicked for a 3-book bundle. */
@@ -169,7 +170,102 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
           </button>
         </OrderSummary>
         <div className="mt-8">
-          {mode === "gateway" ? (
+          {mode === "both" ? (
+            <div className="space-y-6">
+              <section className="card p-6 sm:p-8" aria-labelledby="choose-method">
+                <p className="eyebrow">Step 4 · Payment Method</p>
+                <h2 id="choose-method" className="mt-2 text-2xl">Choose How to Pay</h2>
+                <p className="mt-2 text-sm text-muted">
+                  Select your preferred payment option below to proceed.
+                </p>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("gateway")}
+                    className={`relative rounded-2xl border-2 p-5 text-left transition-all ${
+                      paymentMethod === "gateway"
+                        ? "border-gold bg-gold/10 shadow-sm ring-1 ring-gold"
+                        : "border-line bg-paper hover:border-gold/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${paymentMethod === "gateway" ? "bg-gold/20 text-gold-dark" : "bg-cream text-muted"}`}>
+                          <IconCreditCard width={22} height={22} />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-ink">Pay Online (Instant)</p>
+                          <span className="inline-block rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-800 uppercase">
+                            Instant Access
+                          </span>
+                        </div>
+                      </div>
+                      {paymentMethod === "gateway" && (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gold-dark text-white">
+                          <IconCheck width={14} height={14} />
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted">
+                      Cashfree Gateway: UPI (GPay/PhonePe/Paytm), Cards (Debit/Credit), Net Banking & Wallets. Unlocks your library immediately.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod("upi")}
+                    className={`relative rounded-2xl border-2 p-5 text-left transition-all ${
+                      paymentMethod === "upi"
+                        ? "border-gold bg-gold/10 shadow-sm ring-1 ring-gold"
+                        : "border-line bg-paper hover:border-gold/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${paymentMethod === "upi" ? "bg-gold/20 text-gold-dark" : "bg-cream text-muted"}`}>
+                          <IconQr width={22} height={22} />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-ink">Pay via UPI QR Code</p>
+                          <span className="inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-800 uppercase">
+                            Admin Verified
+                          </span>
+                        </div>
+                      </div>
+                      {paymentMethod === "upi" && (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gold-dark text-white">
+                          <IconCheck width={14} height={14} />
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-muted">
+                      Scan QR code with any UPI app, enter your UTR number, and upload payment screenshot for admin verification.
+                    </p>
+                  </button>
+                </div>
+              </section>
+
+              {paymentMethod === "gateway" ? (
+                <section className="card p-6 sm:p-8" aria-labelledby="gw">
+                  <div className="flex items-center justify-between border-b border-line pb-4">
+                    <div>
+                      <p className="eyebrow">Option 1 · Cashfree Gateway</p>
+                      <h2 id="gw" className="mt-1 text-2xl">Pay securely online</h2>
+                    </div>
+                    <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      ⚡ Instant Access
+                    </span>
+                  </div>
+                  <div className="mt-6">
+                    <GatewayCheckout selection={selection} amount={pkg.price} currency={pkg.currency} />
+                  </div>
+                </section>
+              ) : (
+                upi && <UpiPayment settings={upi} selection={selection} amount={pkg.price} summary={summary} />
+              )}
+            </div>
+          ) : mode === "gateway" ? (
             <section className="card p-6 sm:p-8" aria-labelledby="gw">
               <p className="eyebrow">Step 4 · Payment</p>
               <h2 id="gw" className="mt-2 text-2xl">Pay securely</h2>

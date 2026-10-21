@@ -117,8 +117,11 @@ export function countFreeByStatus(): Record<FreeStatus | "all", number> {
   const rows = getDb().prepare("SELECT status, COUNT(*) AS n FROM free_requests GROUP BY status").all() as { status: FreeStatus; n: number }[];
   const counts = { all: 0, received: 0, sent: 0, completed: 0 };
   for (const r of rows) {
-    counts[r.status] = r.n;
-    counts.all += r.n;
+    const n = Number(r.n || 0);
+    if (r.status in counts) {
+      counts[r.status] = n;
+      counts.all += n;
+    }
   }
   return counts;
 }

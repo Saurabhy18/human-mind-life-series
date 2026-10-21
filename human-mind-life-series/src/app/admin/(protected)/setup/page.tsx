@@ -19,7 +19,9 @@ export default async function AdminSetupPage() {
       key: "Checkout (PAYMENT_PROVIDER)",
       ok: mode !== "closed",
       hint:
-        mode === "gateway"
+        mode === "both"
+          ? "Both Cashfree online checkout and Manual UPI checkout are active."
+          : mode === "gateway"
           ? "Cashfree checkout is on."
           : mode === "upi"
             ? "Manual UPI checkout is on (PAYMENT_PROVIDER=manual_upi)."
@@ -39,7 +41,7 @@ export default async function AdminSetupPage() {
     { key: "WHATSAPP_NUMBER", ok: !isPlaceholder(CONFIG.WHATSAPP_NUMBER), hint: "Digits with country code, e.g. 919876543210." },
     { key: "BUSINESS_LOCATION", ok: !isPlaceholder(CONFIG.BUSINESS_LOCATION), hint: "City/state for the Terms & Conditions." },
     // The UPI details matter only for the opt-in manual UPI checkout.
-    ...(mode === "upi"
+    ...(mode === "upi" || mode === "both"
       ? [
           { key: "UPI_ID", ok: !isPlaceholder(CONFIG.UPI_ID), hint: "Your UPI ID." },
           { key: "UPI_PAYEE_NAME", ok: !isPlaceholder(CONFIG.UPI_PAYEE_NAME), hint: "Name shown in UPI apps." },

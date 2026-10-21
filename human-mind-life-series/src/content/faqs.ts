@@ -53,6 +53,26 @@ export function getGeneralFaqs(mode: CheckoutMode): FaqItem[] {
 }
 
 function purchaseFaqs(mode: CheckoutMode): FaqItem[] {
+  if (mode === "both") {
+    return [
+      {
+        q: "How do I purchase a book?",
+        a: "Choose a book and click “Buy Now”, or pick a bundle of 3 or 5 books. On the payment page, you can choose between two methods: (1) Pay Online via Cashfree for instant access using UPI, Cards or Net Banking; or (2) Pay via UPI QR code, then submit your UTR number and payment screenshot for admin verification.",
+      },
+      {
+        q: "What payment methods do you accept?",
+        a: `We accept online payments via Cashfree (Google Pay, PhonePe, Paytm, BHIM, Debit/Credit Cards, Net Banking & Wallets) AND direct UPI QR code payments (paying to ${CONFIG.UPI_ID} with any UPI app).`,
+      },
+      {
+        q: "How does the UPI QR code payment work?",
+        a: `Scan our QR code on the payment page with any UPI app, pay the exact order amount, then fill in the form with your name, email, WhatsApp, UTR number and upload your payment screenshot. Our team verifies the transaction and delivers your books ${CONFIG.DELIVERY_TIMEFRAME}.`,
+      },
+      {
+        q: "When will I receive my book?",
+        a: `With Cashfree online payment, your ebooks are unlocked instantly upon successful payment. With manual UPI QR payment, your order is verified by our admin team before delivery ${CONFIG.DELIVERY_TIMEFRAME}.`,
+      },
+    ];
+  }
   if (mode === "upi") {
     return [
       {

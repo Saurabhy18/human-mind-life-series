@@ -9,7 +9,7 @@ import { clientIp, hashIp, isSameOrigin } from "@/lib/server/request";
 import { parseItemsField, readSelection, validatePurchase, type ValidPurchase } from "@/lib/server/purchase";
 import { issueAccessToken } from "@/lib/server/fulfillment";
 import { getAuthenticatedUser } from "@/lib/server/auth";
-import { checkoutMode, gatewayEnabled } from "@/lib/server/paymentService";
+import { checkoutMode, gatewayEnabled, upiEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
@@ -136,6 +136,7 @@ async function createGatewayOrder(req: Request, ip: string, user: NonNullable<Aw
 // ----------------------------------------------------------------- UPI flow --
 
 async function createUpiOrder(req: Request, ip: string, user: NonNullable<Awaited<ReturnType<typeof getAuthenticatedUser>>>) {
+  if (!upiEnabled()) return fail(404, "Manual UPI payment is not enabled.");
   const length = Number(req.headers.get("content-length") || 0);
   if (length > MAX_SCREENSHOT_BYTES + 64 * 1024) return fail(413, "The screenshot is too large. Maximum size is 5 MB.");
 

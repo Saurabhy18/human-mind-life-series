@@ -4,12 +4,36 @@ import type { CheckoutMode } from "@/lib/server/paymentService";
 /**
  * Short payment wording used around the site, matched to the configured checkout
  * (lib/server/paymentService.ts → checkoutMode()):
+ *   both            → online payment via Cashfree OR manual UPI QR code
  *   upi             → the original manual UPI QR wording (only when PAYMENT_PROVIDER=manual_upi)
  *   gateway, closed → online-payment wording. While checkout is closed, the checkout page itself
  *                     says that no payment can be made yet.
  * Static pages pick this up at build time, so rebuild after changing PAYMENT_PROVIDER.
  */
 export function paymentCopy(mode: CheckoutMode) {
+  if (mode === "both") {
+    return {
+      payShort: "Pay Online or via UPI QR",
+      payDetail: "Instant online payment (Cards/UPI) or pay manually via UPI QR code.",
+      confirmedShort: "Instant or Verified",
+      confirmedDetail: "Instant access via online payment, or verified by our team for UPI QR payments.",
+      trustPay: "Cards, Net Banking & UPI",
+      trustDelivery: "Instant access or verified delivery",
+      bulletPay: "Pay via Cashfree or UPI QR",
+      bulletConfirmed: "Instant access or admin verified",
+      landingConfirmed: "Instant access with online payment, or verified by admin for UPI QR",
+      footer: "Secure Payments (Cashfree & UPI)",
+      homeCta: "Choose a volume, pay securely via Cashfree or UPI QR, and get your ebooks delivered.",
+      bookCta: "Pay securely online (Cards/UPI) or scan our UPI QR code to complete your order.",
+      howToBuy: [
+        { title: "Click “Buy Now”", text: "Choose your books and bundle package on the checkout page." },
+        { title: "Select Payment Method", text: "Choose between Instant Online Payment (Cashfree) or UPI QR Code." },
+        { title: "Complete Payment", text: "Pay securely via Card/UPI gateway or scan the QR code and submit your UTR & screenshot." },
+        { title: "Access Your Ebooks", text: `Download your ${CONFIG.BOOK_FORMAT} immediately with online payment or after admin verification.` },
+      ],
+    };
+  }
+
   const upi = mode === "upi";
   return {
     payShort: upi ? "Pay by UPI" : "Secure online payment",

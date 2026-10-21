@@ -10,21 +10,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Admin-only download of a consistent snapshot of orders.db (SQLite online
- * backup — includes recent changes still in the -wal file, unlike copying
- * orders.db by hand). Use it before every deployment and on a schedule.
+ * Admin-only download of a consistent JSON snapshot of database tables.
+ * Use it before every deployment and on a schedule.
  */
 export async function GET() {
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
-  const tmp = path.join(os.tmpdir(), `hm-backup-${crypto.randomUUID()}.db`);
+  const tmp = path.join(os.tmpdir(), `hm-backup-${crypto.randomUUID()}.json`);
   try {
     await getDb().backup(tmp);
     const data = await fs.readFile(tmp);
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
     return new Response(new Uint8Array(data), {
       headers: {
-        "Content-Type": "application/vnd.sqlite3",
-        "Content-Disposition": `attachment; filename="orders-backup-${stamp}.db"`,
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="orders-backup-${stamp}.json"`,
         "Cache-Control": "private, no-store",
       },
     });
