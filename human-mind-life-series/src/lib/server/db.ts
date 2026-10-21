@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { Worker } from "node:worker_threads";
 import type { DatabaseSync as SqliteDatabaseSync, SQLInputValue, StatementSync as SqliteStatementSync } from "node:sqlite";
 import { ENV } from "@/config/env.server";
 import { isSupportedNodeVersion } from "@/lib/runtime";
@@ -92,8 +93,161 @@ function normalizePostgresSql(sql: string, params: unknown[], mode: "get" | "all
   return { text, values: bindValues };
 }
 
-function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all" | "run" | "exec") {
-  const { text, values } = normalizePostgresSql(sql, params, mode);
+class SupabaseWorkerPool {
+  private worker: Worker | null = null;
+  private sab: SharedArrayBuffer;
+  private control: Int32Array;
+  private dataView: Uint8Array;
+  private dbUrl: string;
+
+  constructor(dbUrl: string) {
+    this.dbUrl = dbUrl;
+    this.sab = new SharedArrayBuffer(16 * 1024 * 1024); // 16MB
+    this.control = new Int32Array(this.sab, 0, 4);
+    this.dataView = new Uint8Array(this.sab, 16);
+    this.initWorker();
+  }
+
+  private initWorker() {
+    try {
+      const workerScript = `
+        try { require("node:dns").setDefaultResultOrder("ipv4first"); } catch {}
+        const { parentPort, workerData } = require("node:worker_threads");
+        const sab = workerData.sab;
+        const control = new Int32Array(sab, 0, 4);
+        const dataView = new Uint8Array(sab, 16);
+
+        let pool = null;
+        function getPool() {
+          if (!pool) {
+            const { Pool } = require("pg");
+            pool = new Pool({
+              connectionString: workerData.dbUrl,
+              ssl: { rejectUnauthorized: false },
+              max: 10,
+              idleTimeoutMillis: 60000,
+              connectionTimeoutMillis: 10000,
+            });
+            pool.on("error", () => {});
+          }
+          return pool;
+        }
+
+        parentPort.on("message", async () => {
+          try {
+            const len = control[1];
+            const raw = Buffer.from(dataView.buffer, 16, len).toString("utf8");
+            const { text, values, mode } = JSON.parse(raw);
+
+            const p = getPool();
+            const result = await p.query(text, values || []);
+            let output;
+            if (mode === "run") {
+              output = {
+                lastInsertRowid: result.rows?.[0]?.id != null ? Number(result.rows[0].id) : null,
+                changes: result.rowCount ?? 0,
+              };
+            } else if (mode === "get") {
+              output = result.rows?.[0] ?? null;
+            } else if (mode === "all") {
+              output = result.rows ?? [];
+            } else {
+              output = { ok: true, rowCount: result.rowCount ?? 0 };
+            }
+
+            const out = JSON.stringify({ ok: true, data: output });
+            const encoded = Buffer.from(out);
+            if (encoded.length > dataView.length) {
+              throw new Error("Result too large for worker buffer");
+            }
+            dataView.set(encoded);
+            control[1] = encoded.length;
+            control[0] = 2; // done
+          } catch (err) {
+            let msg = (err && err.message) || "Supabase query failed";
+            if (msg.includes("ETIMEDOUT") && workerData.dbUrl && workerData.dbUrl.includes("db.")) {
+              msg += " (Direct Supabase connections are IPv6-only. Use the Supabase Connection Pooler URL with port 6543/5432 for IPv4 compatibility).";
+            }
+            const out = JSON.stringify({ ok: false, message: msg });
+            const encoded = Buffer.from(out);
+            dataView.set(encoded);
+            control[1] = encoded.length;
+            control[0] = 3; // error
+          } finally {
+            Atomics.notify(control, 0, 1);
+          }
+        });
+      `;
+
+      this.worker = new Worker(workerScript, {
+        eval: true,
+        workerData: { sab: this.sab, dbUrl: this.dbUrl },
+        env: process.env,
+      });
+
+      this.worker.on("error", () => {
+        this.terminate();
+      });
+
+      this.worker.on("exit", () => {
+        this.worker = null;
+      });
+    } catch {
+      this.worker = null;
+    }
+  }
+
+  private terminate() {
+    try {
+      this.worker?.terminate();
+    } catch {}
+    this.worker = null;
+  }
+
+  querySync(text: string, values: unknown[], mode: string): unknown {
+    if (!this.worker) this.initWorker();
+    if (!this.worker) throw new Error("Worker pool could not be initialized");
+
+    const payload = JSON.stringify({ text, values, mode });
+    const encoded = Buffer.from(payload);
+    if (encoded.length > this.dataView.length) {
+      throw new Error("Query payload too large");
+    }
+
+    this.dataView.set(encoded);
+    this.control[1] = encoded.length;
+    this.control[0] = 1; // working
+
+    this.worker.postMessage("query");
+    const waitRes = Atomics.wait(this.control, 0, 1, 30000);
+    if (waitRes === "timed-out") {
+      this.terminate();
+      throw new Error("Supabase query timed out (30s)");
+    }
+
+    const len = this.control[1];
+    const raw = Buffer.from(this.dataView.buffer, 16, len).toString("utf8");
+    const res = JSON.parse(raw);
+    if (!res.ok) throw new Error(res.message);
+    return res.data;
+  }
+}
+
+const globalWorkerPool = globalThis as unknown as { __supabaseWorkerPool?: SupabaseWorkerPool };
+
+function getWorkerPool(): SupabaseWorkerPool | null {
+  if (!ENV.supabase.databaseUrl) return null;
+  if (!globalWorkerPool.__supabaseWorkerPool) {
+    try {
+      globalWorkerPool.__supabaseWorkerPool = new SupabaseWorkerPool(ENV.supabase.databaseUrl);
+    } catch {
+      return null;
+    }
+  }
+  return globalWorkerPool.__supabaseWorkerPool;
+}
+
+function executeSupabaseQuerySpawn(text: string, values: unknown[], mode: "get" | "all" | "run" | "exec") {
   const script = `
     try { require("node:dns").setDefaultResultOrder("ipv4first"); } catch {}
     const { Client } = require("pg");
@@ -133,7 +287,6 @@ function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all
       process.stdout.write(JSON.stringify({ ok: false, message: msg }));
       process.exitCode = 1;
     });
-
   `;
 
   const resolvedPgPath = (() => {
@@ -166,6 +319,21 @@ function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all
   const output = JSON.parse(child.stdout || "{\"ok\":true,\"data\":null}");
   if (!output.ok) throw new Error(output.message || "Supabase query failed.");
   return output.data;
+}
+
+function executeSupabaseQuery(sql: string, params: unknown[], mode: "get" | "all" | "run" | "exec") {
+  const { text, values } = normalizePostgresSql(sql, params, mode);
+
+  try {
+    const pool = getWorkerPool();
+    if (pool) {
+      return pool.querySync(text, values, mode);
+    }
+  } catch (err) {
+    console.warn("[executeSupabaseQuery] Worker pool query failed, using spawn fallback:", err instanceof Error ? err.message : err);
+  }
+
+  return executeSupabaseQuerySpawn(text, values, mode);
 }
 
 /**
@@ -243,11 +411,9 @@ class Statement {
 
 export class Database {
   private readonly db?: SqliteDatabaseSync;
-  private readonly databaseFile?: string;
   private depth = 0;
 
   constructor(file?: string) {
-    this.databaseFile = file;
     if (ENV.database.driver !== "supabase" || !ENV.supabase.databaseUrl) {
       const sqlite = getSqliteModule();
       this.db = new sqlite.DatabaseSync(file ?? path.join(STORAGE_DIR, "orders.db"));

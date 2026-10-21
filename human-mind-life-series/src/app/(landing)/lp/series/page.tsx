@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { CONFIG } from "@/config/site.config";
 import { SERIES } from "@/content/books";
 import { PACKAGES } from "@/config/packages";
-import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bookActionLabel, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
+import { ALL_BOOKS, BUNDLE_SLUG, PAID_BOOKS, bookActionHref, bookActionLabel, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
 import { getSiteCatalog } from "@/lib/server/books";
 import { pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";

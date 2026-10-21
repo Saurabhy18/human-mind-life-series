@@ -50,17 +50,11 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
     }
   }, [fragmentToken, orderRef]);
   const token = fragmentToken ?? storedToken;
-  const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState("");
   // Gateway payments are confirmed by re-asking Cashfree (server-side) until the order resolves.
   const paymentResolved = useRef(false); // true once the server reports PAID or FAILED
   const verifyTries = useRef(0); // bound how many times we re-poll Cashfree while still PENDING
-
-  useEffect(() => {
-    const t = setTimeout(() => setHydrated(true), 0);
-    return () => clearTimeout(t);
-  }, []);
 
   const load = useCallback(async () => {
     try {

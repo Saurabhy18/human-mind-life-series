@@ -53,6 +53,19 @@ function findExistingLocalPath(slug: string): string | null {
   return null;
 }
 
+const failedSyncs = new Map<string, number>();
+const FAILED_SYNC_TTL = 60_000; // 60 seconds
+
+export function clearBookSourceCache(slug?: string) {
+  if (slug) {
+    failedSyncs.delete(slug);
+    resolvedPaths.delete(slug);
+  } else {
+    failedSyncs.clear();
+    resolvedPaths.clear();
+  }
+}
+
 /**
  * Ensures the source PDF is present on the local filesystem.
  * If not present locally and Supabase storage is configured, downloads
@@ -64,6 +77,10 @@ export async function ensureBookSource(slugOrBook: string | Book): Promise<strin
 
   const existing = findExistingLocalPath(slug);
   if (existing) return existing;
+
+  if (failedSyncs.has(slug) && Date.now() - failedSyncs.get(slug)! < FAILED_SYNC_TTL) {
+    return null;
+  }
 
   const isSupabase = ENV.storage.driver === "supabase" || (ENV.supabase.ready && !!ENV.storage.bucket);
   if (!isSupabase) return null;
@@ -93,6 +110,7 @@ export async function ensureBookSource(slugOrBook: string | Book): Promise<strin
       }
 
       if (res.error || !res.data) {
+        failedSyncs.set(slug, Date.now());
         return null;
       }
 
@@ -113,9 +131,11 @@ export async function ensureBookSource(slugOrBook: string | Book): Promise<strin
         fs.renameSync(tmp, targetPath);
       }
 
+      failedSyncs.delete(slug);
       resolvedPaths.set(slug, targetPath);
       return targetPath;
     } catch (err) {
+      failedSyncs.set(slug, Date.now());
       console.error(`[bookSource] Failed to download ${slug}.pdf from Supabase storage:`, err);
       return null;
     } finally {

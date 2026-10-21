@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { Cashfree } from "@cashfreepayments/cashfree-js";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";

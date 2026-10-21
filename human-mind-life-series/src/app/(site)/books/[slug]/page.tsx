@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CONFIG } from "@/config/site.config";
 import { PACKAGES } from "@/config/packages";
-import { ALL_BOOKS, bundleEnabled, formatINR, getBook, packageCheckoutHref } from "@/lib/products";
+import { bundleEnabled, formatINR, packageCheckoutHref } from "@/lib/products";
 import { bookOgImage, bookSchema, breadcrumbSchema, faqSchema, pageMetadata } from "@/lib/seo";
 import { BookCover } from "@/components/BookCover";
 import { BookPrice } from "@/components/BookPrice";
@@ -26,6 +26,7 @@ import { getBookFromDbOrStatic, getSiteCatalog } from "@/lib/server/books";
 type Props = { params: Promise<{ slug: string }> };
 
 export const dynamicParams = true;
+export const revalidate = 60;
 
 export function generateStaticParams() {
   const { allBooks } = getSiteCatalog();

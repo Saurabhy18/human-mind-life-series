@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { CONFIG, SITE_URL, SITE_URL_IS_PLACEHOLDER, isPlaceholder } from "@/config/site.config";
 import { requireAdmin } from "@/lib/server/auth";
 import { PRIVATE_BOOKS_DIR, storageStatus } from "@/lib/server/db";

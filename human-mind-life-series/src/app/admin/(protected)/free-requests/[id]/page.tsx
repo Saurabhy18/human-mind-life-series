@@ -1,10 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CONFIG } from "@/config/site.config";
 import { requireAdmin } from "@/lib/server/auth";
-import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
 import { getFreeRequest } from "@/lib/server/free-requests";
 import { FREE_STATUSES, FREE_STATUS_LABELS } from "@/lib/free-status";
 import { mailtoLink, whatsappLink } from "@/lib/contact";

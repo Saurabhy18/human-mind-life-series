@@ -5,6 +5,7 @@ import { getDb, PRIVATE_BOOKS_DIR } from "./db";
 import { createSupabaseAdminClient } from "@/lib/supabase";
 import { ENV } from "@/config/env.server";
 import { ALL_BOOKS, FREE_BOOKS, PAID_BOOKS, getBook, getProduct, getFreeBook, type Book, type Product } from "@/lib/products";
+import { clearBookSourceCache } from "./translation/bookSource";
 
 export type DbBook = {
   id: number;
@@ -125,18 +126,32 @@ function normalizeDbBook(row: any): DbBook {
   };
 }
 
+let cachedDbBooks: { at: number; books: DbBook[] } | null = null;
+const BOOKS_CACHE_TTL = 60_000; // 60 seconds
+
+export function invalidateDbBooksCache() {
+  cachedDbBooks = null;
+}
+
 /**
  * List all books from the database
  */
 export function listDbBooks(): DbBook[] {
+  if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
+    return cachedDbBooks.books;
+  }
   try {
     const rows = getDb()
       .prepare("SELECT * FROM books ORDER BY volume ASC NULLS LAST, id ASC")
       .all() as any[];
-    return rows.map(normalizeDbBook);
+    const books = rows.map(normalizeDbBook);
+    if (books.length > 0) {
+      cachedDbBooks = { at: Date.now(), books };
+    }
+    return books;
   } catch (err) {
     console.error("listDbBooks query error:", err);
-    return [];
+    return cachedDbBooks?.books ?? [];
   }
 }
 
@@ -144,6 +159,10 @@ export function listDbBooks(): DbBook[] {
  * Get a single book by slug
  */
 export function getDbBookBySlug(slug: string): DbBook | undefined {
+  if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
+    const found = cachedDbBooks.books.find((b) => b.slug === slug);
+    if (found) return found;
+  }
   try {
     const row = getDb().prepare("SELECT * FROM books WHERE slug = ?").get(slug) as any;
     return row ? normalizeDbBook(row) : undefined;
@@ -157,6 +176,10 @@ export function getDbBookBySlug(slug: string): DbBook | undefined {
  * Get a single book by ID
  */
 export function getDbBookById(id: number): DbBook | undefined {
+  if (cachedDbBooks && Date.now() - cachedDbBooks.at < BOOKS_CACHE_TTL) {
+    const found = cachedDbBooks.books.find((b) => b.id === id);
+    if (found) return found;
+  }
   try {
     const row = getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as any;
     return row ? normalizeDbBook(row) : undefined;
@@ -198,6 +221,7 @@ export async function uploadBookPdfToStorage(
       return { ok: false, error: error.message };
     }
 
+    clearBookSourceCache();
     return { ok: true, path: filename };
   } catch (err: any) {
     console.error("[uploadBookPdfToStorage] Unexpected error:", err);
@@ -219,6 +243,7 @@ export async function deleteBookPdfFromStorage(filename: string): Promise<boolea
     if (!client) return false;
     const bucket = ENV.storage.bucket || "site-files";
     const { error } = await client.storage.from(bucket).remove([filename]);
+    clearBookSourceCache();
     return !error;
   } catch (err) {
     console.error("[deleteBookPdfFromStorage] Error:", err);
@@ -276,6 +301,7 @@ export function createDbBook(input: NewDbBookInput): DbBook {
   });
 
   const id = Number(res.lastInsertRowid);
+  invalidateDbBooksCache();
   const created = getDbBookById(id);
   if (!created) throw new Error("Failed to retrieve created book.");
   return created;
@@ -353,6 +379,7 @@ export function updateDbBook(id: number, input: Partial<NewDbBookInput>): DbBook
     cover_accent: input.cover_accent !== undefined ? input.cover_accent.trim() : existing.cover_accent,
   });
 
+  invalidateDbBooksCache();
   const updated = getDbBookById(id);
   if (!updated) throw new Error("Failed to retrieve updated book.");
   return updated;
@@ -384,6 +411,7 @@ export async function deleteDbBook(id: number, deletePdfFromStorage = false): Pr
   if (!existing) return false;
 
   getDb().prepare("DELETE FROM books WHERE id = ?").run(id);
+  invalidateDbBooksCache();
 
   if (deletePdfFromStorage && existing.pdf_filename) {
     await deleteBookPdfFromStorage(existing.pdf_filename);

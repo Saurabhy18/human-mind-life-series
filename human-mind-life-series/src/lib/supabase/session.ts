@@ -21,6 +21,14 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // Fast-path: if the request has no Supabase session/auth cookies at all,
+  // skip the expensive network call to refresh non-existent tokens.
+  const allCookies = request.cookies.getAll();
+  const hasAuthCookie = allCookies.some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+  if (!hasAuthCookie) {
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {

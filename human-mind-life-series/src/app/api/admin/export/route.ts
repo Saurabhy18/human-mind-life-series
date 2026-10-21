@@ -1,15 +1,9 @@
 import { isAdmin } from "@/lib/server/auth";
 import { itemsForOrders, listOrders, orderAuthor } from "@/lib/server/orders";
 import { STATUS_LABELS } from "@/lib/order-status";
+import { csvCell } from "@/lib/text";
 
 export const runtime = "nodejs";
-
-function csvCell(value: unknown): string {
-  let s = value == null ? "" : String(value);
-  // Prevent spreadsheet formula injection.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-}
 
 export async function GET() {
   if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });

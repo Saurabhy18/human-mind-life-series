@@ -15,7 +15,8 @@ export default async function AdminBooksPage({
   const filter = sp.filter || "all";
   const q = (sp.q || "").toLowerCase().trim();
 
-  let books = listDbBooks();
+  const allBooks = listDbBooks();
+  let books = allBooks;
 
   if (filter === "sale") {
     books = books.filter((b) => b.for_sale);
@@ -32,9 +33,9 @@ export default async function AdminBooksPage({
     );
   }
 
-  const allCount = listDbBooks().length;
-  const saleCount = listDbBooks().filter((b) => b.for_sale).length;
-  const freeCount = listDbBooks().filter((b) => b.is_free).length;
+  const allCount = allBooks.length;
+  const saleCount = allBooks.filter((b) => b.for_sale).length;
+  const freeCount = allBooks.filter((b) => b.is_free).length;
 
   return (
     <div>
