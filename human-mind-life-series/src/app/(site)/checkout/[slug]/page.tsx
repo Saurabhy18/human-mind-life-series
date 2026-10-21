@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { LANGUAGE_CODE_RE } from "@/config/languages";
 import { PACKAGES } from "@/config/packages";
-import { BUNDLE_SLUG, bundleEnabled, getFreeBook, getProduct } from "@/lib/products";
+import { BUNDLE_SLUG, bundleEnabled } from "@/lib/products";
 import { pageMetadata } from "@/lib/seo";
 import { CheckoutView } from "@/components/checkout/CheckoutView";
 

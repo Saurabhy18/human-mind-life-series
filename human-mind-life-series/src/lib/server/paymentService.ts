@@ -42,28 +42,48 @@ export function checkoutMode(): CheckoutMode {
   return ENV.payment.provider === "manual_upi" ? "upi" : "closed";
 }
 
-/** Thin Cashfree PG REST client. Never logs the secret; callers never receive it. */
-async function cashfree<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${ENV.payment.cashfreeApiBase}${path}`, {
-    method,
-    headers: {
-      "x-client-id": ENV.payment.cashfreeClientId,
-      "x-client-secret": ENV.payment.cashfreeSecretKey,
-      "x-api-version": ENV.payment.cashfreeApiVersion,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) {
-    // Cashfree returns a JSON { message, code } body on errors; keep the message, never the credentials.
-    let detail = "";
+/** Thin Cashfree PG REST client with retry on transient network/gateway timeouts. Never logs secrets. */
+async function cashfree<T>(method: "GET" | "POST", path: string, body?: unknown, retries = 1): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      detail = ((await res.json()) as { message?: string }).message ?? "";
-    } catch {}
-    throw new Error(`Cashfree ${method} ${path} → HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+      const res = await fetch(`${ENV.payment.cashfreeApiBase}${path}`, {
+        method,
+        headers: {
+          "x-client-id": ENV.payment.cashfreeClientId,
+          "x-client-secret": ENV.payment.cashfreeSecretKey,
+          "x-api-version": ENV.payment.cashfreeApiVersion,
+          "Content-Type": "application/json",
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        let detail = "";
+        try {
+          detail = ((await res.json()) as { message?: string }).message ?? "";
+        } catch {}
+        const error = new Error(`Cashfree ${method} ${path} → HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+        // Retry transient server errors: 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout
+        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+          logger.warn(`Cashfree ${method} ${path} returned HTTP ${res.status}, retrying in 1s...`);
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        throw error;
+      }
+      return (await res.json()) as T;
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries && !(err instanceof Error && err.message.startsWith("Cashfree "))) {
+        logger.warn(`Cashfree ${method} ${path} connection error (${errorMessage(err)}), retrying in 1s...`);
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
+      }
+      throw err;
+    }
   }
-  return (await res.json()) as T;
+  throw lastError;
 }
 
 type CfOrder = {
@@ -107,23 +127,32 @@ export async function createGatewayPayment(order: Order, returnBaseUrl?: string)
     // Already created: fetch the live order to get a current payment session (and to be sure it is still payable).
     cf = await cashfree<CfOrder>("GET", `/orders/${encodeURIComponent(order.provider_order_id)}`);
   } else {
-    cf = await cashfree<CfOrder>("POST", "/orders", {
-      order_id: order.ref, // our own reference is the Cashfree order id (unique)
-      order_amount: order.amount, // RUPEES (Cashfree uses decimals, not paise)
-      order_currency: order.currency,
-      customer_details: {
-        customer_id: `cust_${order.customer_id ?? order.id}`,
-        customer_name: order.buyer_name,
-        customer_email: order.email,
-        customer_phone: PLACEHOLDER_PHONE,
-      },
-      order_meta: {
-        return_url: `${returnBase}/order/status/${order.ref}`,
-        notify_url: `${ENV.frontendUrl}/api/payment/webhook`,
-      },
-      order_note: order.product_title.slice(0, 200),
-      order_tags: { ref: order.ref, package: order.package_type },
-    });
+    try {
+      cf = await cashfree<CfOrder>("POST", "/orders", {
+        order_id: order.ref, // our own reference is the Cashfree order id (unique)
+        order_amount: order.amount, // RUPEES (Cashfree uses decimals, not paise)
+        order_currency: order.currency,
+        customer_details: {
+          customer_id: `cust_${order.customer_id ?? order.id}`,
+          customer_name: order.buyer_name,
+          customer_email: order.email,
+          customer_phone: PLACEHOLDER_PHONE,
+        },
+        order_meta: {
+          return_url: `${returnBase}/order/status/${order.ref}`,
+          notify_url: `${ENV.frontendUrl}/api/payment/webhook`,
+        },
+        order_note: order.product_title.slice(0, 200),
+        order_tags: { ref: order.ref, package: order.package_type },
+      });
+    } catch (err) {
+      // If Cashfree timed out (504) or failed with order collision, check if the order was created at Cashfree!
+      try {
+        cf = await cashfree<CfOrder>("GET", `/orders/${encodeURIComponent(order.ref)}`, undefined, 0);
+      } catch {
+        throw err;
+      }
+    }
     if (cf.order_id !== order.ref || !sameAmount(cf.order_amount, order.amount) || cf.order_currency !== order.currency) {
       throw new Error("Gateway order does not match our order");
     }

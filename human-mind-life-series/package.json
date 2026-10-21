@@ -13,9 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "worker": "tsx --conditions=react-server scripts/translation-worker.mts",
-    "setup-admin": "node scripts/setup-admin.mjs",
-    "setup-auth": "node scripts/migrate-auth.mjs",
-    "test:auth": "node scripts/test-auth-flow.mjs"
+    "setup-admin": "node scripts/setup-admin.mjs"
   },
   "dependencies": {
     "@cashfreepayments/cashfree-js": "^1.0.7",

@@ -39,6 +39,9 @@ export function useCurrency(): CurrencyContextValue {
   return useContext(CurrencyContext);
 }
 
+const RATES_CACHE_KEY = "display-currency-rates";
+const RATES_CACHE_MAX_AGE = 3600_000; // 1 hour
+
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   // Start on the base currency so the server and the first client render match
   // (localStorage is read after mount). Returning visitors see their choice
@@ -54,12 +57,31 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // localStorage may be unavailable (private mode) — ignore and stay on base.
     }
+
+    let hasFreshRates = false;
+    try {
+      const cached = localStorage.getItem(RATES_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { at: number; rates: Rates };
+        if (parsed?.rates && Date.now() - parsed.at < RATES_CACHE_MAX_AGE) {
+          setRates({ [BASE_CURRENCY]: 1, ...parsed.rates });
+          setReady(true);
+          hasFreshRates = true;
+        }
+      }
+    } catch {}
+
+    if (hasFreshRates) return;
+
     let cancelled = false;
     fetch("/api/exchange-rates")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { rates?: Rates } | null) => {
         if (cancelled || !data?.rates) return;
         setRates({ [BASE_CURRENCY]: 1, ...data.rates });
+        try {
+          localStorage.setItem(RATES_CACHE_KEY, JSON.stringify({ at: Date.now(), rates: data.rates }));
+        } catch {}
       })
       .catch(() => {})
       .finally(() => {

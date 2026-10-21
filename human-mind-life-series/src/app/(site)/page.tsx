@@ -6,7 +6,7 @@ import { getGeneralFaqs } from "@/content/faqs";
 import { paymentCopy } from "@/content/paymentCopy";
 import { checkoutMode } from "@/lib/server/paymentService";
 import { PACKAGES } from "@/config/packages";
-import { ALL_BOOKS, BUNDLE_SLUG, FREE_BOOKS, PAID_BOOKS, bookActionHref, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
+import { ALL_BOOKS, BUNDLE_SLUG, PAID_BOOKS, bookActionHref, bundleEnabled, bundlePrice, formatINR, individualTotal, packageCheckoutHref, volumeRange } from "@/lib/products";
 import { getSiteCatalog } from "@/lib/server/books";
 import { countWord } from "@/lib/text";
 import { faqSchema, organizationSchema, pageMetadata, seriesSchema } from "@/lib/seo";
@@ -20,7 +20,7 @@ import { AuthorsGrid } from "@/components/AuthorBlock";
 import { SectionHeading } from "@/components/PageHeader";
 import { IconArrowRight, IconBook, IconCheck, IconPhone, IconQr, IconShield } from "@/components/icons";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = pageMetadata({
   title: `${CONFIG.SITE_NAME} — Psychology, Human Behaviour & Personal Growth Books`,

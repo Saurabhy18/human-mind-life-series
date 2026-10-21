@@ -14,7 +14,7 @@ import { checkoutMode } from "@/lib/server/paymentService";
 import { translationOffered } from "@/config/env.server";
 import { getSiteCatalog } from "@/lib/server/books";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = pageMetadata({
   title: "All Books — Psychology & Self Improvement Books",
