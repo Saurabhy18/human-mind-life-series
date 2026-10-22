@@ -64,7 +64,7 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         </div>
         <h3 className="text-xl font-serif text-ink">Sign in to complete your purchase</h3>
         <p className="mt-2 text-sm text-muted max-w-md mx-auto">
-          You must be logged in to place an order. Your ebooks will be immediately linked to your account and accessible from your dashboard anytime.
+          You must be logged in to place an order. Your ebooks will be immediately linked to your account and accessible from My Orders anytime.
         </p>
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
           <button

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, LayoutDashboard, LogOut, Package, User } from "lucide-react";
 import { IconClose, IconMenu } from "../icons";
 import { CurrencySelect } from "../currency/CurrencySelect";
 import { useAuth } from "../auth/AuthContext";
@@ -21,6 +22,98 @@ export function Logo() {
         Human Mind <span className="text-gold">&amp;</span> Life Series
       </span>
     </Link>
+  );
+}
+
+function ProfileMenu({
+  name,
+  email,
+  isAdmin,
+  onSignOut,
+}: {
+  name: string;
+  email?: string;
+  isAdmin: boolean;
+  onSignOut: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const itemClass =
+    "flex w-full items-center gap-3 px-4 py-2.5 text-sm text-ink/85 hover:bg-gold/10 hover:text-ink transition-colors";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        title={email}
+        className="flex items-center gap-1.5 rounded-full border border-line bg-white/70 p-1 pr-2 text-ink hover:border-gold hover:bg-white transition"
+      >
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gold/15 font-serif text-sm font-semibold uppercase text-gold-dark">
+          {name.charAt(0)}
+        </span>
+        <ChevronDown size={14} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-white py-1 shadow-lg"
+        >
+          <div className="border-b border-line px-4 py-3">
+            <p className="truncate text-sm font-semibold text-ink">{name}</p>
+            {email && <p className="truncate text-xs text-muted">{email}</p>}
+          </div>
+          <Link href="/profile" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+            <User size={16} className="text-gold-dark" />
+            Profile
+          </Link>
+          <Link href="/orders" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+            <Package size={16} className="text-gold-dark" />
+            My Orders
+          </Link>
+          {isAdmin && (
+            <Link href="/admin" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+              <LayoutDashboard size={16} className="text-gold-dark" />
+              Admin Panel
+            </Link>
+          )}
+          <div className="my-1 border-t border-line" />
+          <button
+            type="button"
+            role="menuitem"
+            className={`${itemClass} text-danger hover:bg-danger/10 hover:text-danger`}
+            onClick={() => {
+              setOpen(false);
+              onSignOut();
+            }}
+          >
+            <LogOut size={16} />
+            Logout
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -84,33 +177,13 @@ export function Header() {
           {mounted && !loading && (
             <div className="flex items-center gap-3 pl-3 border-l border-line">
               {user ? (
-                <div className="flex items-center gap-3">
-                  {role === "admin" && (
-                    <Link
-                      href="/admin"
-                      className="rounded-full bg-ink text-white px-3 py-1.5 text-xs font-semibold hover:bg-gold-dark transition shadow-sm"
-                    >
-                      Admin Panel
-                    </Link>
-                  )}
-                  <Link
-                    href="/dashboard"
-                    className="flex items-center gap-2 rounded-full border border-line bg-white/70 px-3 py-1.5 text-xs font-medium text-ink hover:border-gold hover:bg-white transition"
-                    title={user.email}
-                  >
-                    <span className="max-w-[120px] truncate">{user.fullName || user.email?.split("@")[0]}</span>
-                    <span className="rounded bg-gold/15 px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-gold-dark">
-                      {role || "user"}
-                    </span>
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => signOut()}
-                    className="text-xs font-medium text-muted hover:text-danger transition"
-                  >
-                    Sign Out
-                  </button>
-                </div>
+                <ProfileMenu
+                  key={pathname}
+                  name={user.fullName || user.email?.split("@")[0] || "Account"}
+                  email={user.email}
+                  isAdmin={role === "admin"}
+                  onSignOut={signOut}
+                />
               ) : (
                 <div className="flex items-center gap-3">
                   <Link
@@ -183,14 +256,22 @@ export function Header() {
                     )}
                     <li>
                       <Link
-                        href="/dashboard"
+                        href="/profile"
                         onClick={() => setOpenOn(null)}
-                        className="flex items-center justify-between border-b border-line py-4 font-serif text-2xl text-ink"
+                        className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
                       >
-                        <span>Dashboard</span>
-                        <span className="rounded bg-gold/15 px-2 py-0.5 text-xs font-sans font-bold uppercase text-gold-dark">
-                          {role || "user"}
-                        </span>
+                        <User size={22} className="text-gold-dark" />
+                        <span>Profile</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/orders"
+                        onClick={() => setOpenOn(null)}
+                        className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
+                      >
+                        <Package size={22} className="text-gold-dark" />
+                        <span>My Orders</span>
                       </Link>
                     </li>
                     <li className="py-3">
@@ -200,9 +281,10 @@ export function Header() {
                           setOpenOn(null);
                           signOut();
                         }}
-                        className="text-left font-sans text-sm font-medium text-danger"
+                        className="flex items-center gap-2 text-left font-sans text-sm font-medium text-danger"
                       >
-                        Sign Out ({user.email})
+                        <LogOut size={16} />
+                        Logout ({user.email})
                       </button>
                     </li>
                   </>

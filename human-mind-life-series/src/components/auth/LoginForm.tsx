@@ -8,7 +8,7 @@ import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/clie
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = searchParams.get("next") || "/";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,7 +52,9 @@ export function LoginForm() {
         }
       }
 
-      router.push(next);
+      // Admins land on the admin dashboard unless a specific page asked them to come back.
+      const explicitNext = searchParams.get("next");
+      router.push(!explicitNext && data.user?.role === "admin" ? "/admin" : next);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
@@ -157,7 +159,7 @@ export function LoginForm() {
         <div className="mt-8 border-t border-line pt-6 text-center text-sm text-muted">
           Don&apos;t have an account?{" "}
           <Link
-            href={`/signup${next !== "/dashboard" ? `?next=${encodeURIComponent(next)}` : ""}`}
+            href={`/signup${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="font-semibold text-gold-dark hover:underline"
           >
             Create an account

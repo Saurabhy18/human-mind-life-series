@@ -13,7 +13,7 @@ export default async function LoginPage(props: {
   searchParams?: Promise<{ next?: string }>;
 }) {
   const searchParams = props.searchParams ? await props.searchParams : undefined;
-  const next = searchParams?.next || "/dashboard";
+  const next = searchParams?.next || "/";
 
   // If already authenticated, redirect to next
   const supabase = await createClient();
@@ -22,6 +22,10 @@ export default async function LoginPage(props: {
   } = await supabase.auth.getUser();
 
   if (user) {
+    if (!searchParams?.next) {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      if (profile?.role === "admin") redirect("/admin");
+    }
     redirect(next);
   }
 

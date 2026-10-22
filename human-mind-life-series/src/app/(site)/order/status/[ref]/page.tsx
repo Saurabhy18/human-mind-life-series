@@ -23,8 +23,8 @@ export default async function OrderStatusPage({ params }: Props) {
     <div className="container-page py-10 sm:py-16">
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex items-center justify-between">
-          <Link href="/dashboard" className="text-sm font-medium text-muted hover:text-ink transition flex items-center gap-1.5">
-            ← My Dashboard
+          <Link href="/orders" className="text-sm font-medium text-muted hover:text-ink transition flex items-center gap-1.5">
+            ← My Orders
           </Link>
           <div className="flex items-center gap-4 text-sm font-medium">
             <Link href="/books" className="text-muted hover:text-ink transition">

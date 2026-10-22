@@ -8,7 +8,7 @@ import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/clie
 export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = searchParams.get("next") || "/";
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -243,7 +243,7 @@ export function SignupForm() {
         <div className="mt-8 border-t border-line pt-6 text-center text-sm text-muted">
           Already have an account?{" "}
           <Link
-            href={`/login${next !== "/dashboard" ? `?next=${encodeURIComponent(next)}` : ""}`}
+            href={`/login${next !== "/" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="font-semibold text-gold-dark hover:underline"
           >
             Sign in

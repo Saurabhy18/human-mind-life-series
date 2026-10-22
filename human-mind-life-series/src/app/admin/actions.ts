@@ -8,6 +8,7 @@ import { getOrder, setMessageHandled, updateOrderStatus } from "@/lib/server/ord
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp } from "@/lib/server/request";
 import { isOrderStatus } from "@/lib/order-status";
+import { createClient } from "@/lib/supabase/server";
 import { isFreeStatus } from "@/lib/free-status";
 import { getFreeRequest, updateFreeStatus } from "@/lib/server/free-requests";
 import { issueAccessToken, markOrderPaid, markOrderPaymentFailed, retryTranslation, sendReadyEmail, startFulfillment, statusUrl } from "@/lib/server/fulfillment";
@@ -32,6 +33,12 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
 export async function logoutAction(): Promise<void> {
   await destroySession();
+  // An admin may also be signed in through their Supabase account; isAdmin() accepts either.
+  try {
+    await (await createClient()).auth.signOut();
+  } catch {
+    // Ignore
+  }
   redirect("/admin/login");
 }
 

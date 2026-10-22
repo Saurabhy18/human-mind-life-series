@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/server/auth";
 import { countUnhandledMessages } from "@/lib/server/orders";
 import { countFreeByStatus } from "@/lib/server/free-requests";
-import { logoutAction } from "../actions";
+import { AdminLogoutButton } from "@/components/admin/AdminLogoutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +41,7 @@ export default async function ProtectedAdminLayout({ children }: { children: Rea
           </div>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/" target="_blank" className="text-ink/60 hover:text-ink">View site ↗</Link>
-            <form action={logoutAction}>
-              <button type="submit" className="rounded-full border border-line px-3 py-1.5 hover:border-ink/40">Log out</button>
-            </form>
+            <AdminLogoutButton />
           </div>
         </div>
       </header>

@@ -13,7 +13,7 @@ export default async function SignupPage(props: {
   searchParams?: Promise<{ next?: string }>;
 }) {
   const searchParams = props.searchParams ? await props.searchParams : undefined;
-  const next = searchParams?.next || "/dashboard";
+  const next = searchParams?.next || "/";
 
   // If already authenticated, redirect to next
   const supabase = await createClient();
