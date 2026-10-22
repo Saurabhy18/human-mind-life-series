@@ -102,16 +102,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile]);
 
   const signOut = useCallback(async () => {
+    // Each step is best-effort: a failure in one must not leave the user stuck signed in.
     try {
-      const supabase = createSupabaseBrowserClient();
-      await supabase.auth.signOut();
-      await fetch("/api/auth/logout", { method: "POST" });
-      setUser(null);
-      router.push("/login");
-      router.refresh();
+      await createSupabaseBrowserClient().auth.signOut();
     } catch {
       // Ignore
     }
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Ignore
+    }
+    setUser(null);
+    router.push("/login");
+    router.refresh();
   }, [router]);
 
   const refresh = useCallback(async () => {

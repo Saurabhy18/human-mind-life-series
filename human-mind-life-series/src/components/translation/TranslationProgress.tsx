@@ -110,10 +110,10 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       <div className="card p-8 text-center space-y-4">
         <p className="text-xl font-serif text-ink">{error}</p>
         <p className="text-sm text-muted max-w-md mx-auto">
-          If you placed this order while logged in, please make sure you are signed into your account. You can also view all your purchases directly in your dashboard.
+          If you placed this order while logged in, please make sure you are signed into your account. You can also view all your purchases directly under My Orders.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/dashboard" className="btn-primary px-5 py-2.5">Go to Dashboard</Link>
+          <Link href="/orders" className="btn-primary px-5 py-2.5">Go to My Orders</Link>
           <Link href="/books" className="btn-outline px-5 py-2.5">Browse Books</Link>
           <Link href="/contact" className="btn-outline px-5 py-2.5">Contact Support</Link>
         </div>
@@ -195,8 +195,8 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       )}
 
       <div className="mt-8 pt-6 border-t border-line flex flex-wrap items-center justify-center gap-3">
-        <Link href="/dashboard" className="btn-primary px-5 py-2.5 text-center">
-          Go to Dashboard
+        <Link href="/orders" className="btn-primary px-5 py-2.5 text-center">
+          Go to My Orders
         </Link>
         <Link href="/books" className="btn-outline px-5 py-2.5 text-center">
           Browse Books

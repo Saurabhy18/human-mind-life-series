@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { BookOpen, Download, ExternalLink, FileText, Pencil, Plus, Search, ShoppingBag } from "lucide-react";
+import { DeleteBookButton } from "@/components/admin/DeleteBookButton";
 import { requireAdmin } from "@/lib/server/auth";
 import { listDbBooks } from "@/lib/server/books";
 import { deleteBookAction, toggleBookStatusAction } from "@/app/admin/books/actions";
@@ -37,6 +39,12 @@ export default async function AdminBooksPage({
   const saleCount = allBooks.filter((b) => b.for_sale).length;
   const freeCount = allBooks.filter((b) => b.is_free).length;
 
+  const stats = [
+    { key: "all", href: "/admin/books", label: "All Books", count: allCount, Icon: BookOpen, tone: "bg-ink/10 text-ink", ring: "ring-ink" },
+    { key: "sale", href: "/admin/books?filter=sale", label: "For Sale", count: saleCount, Icon: ShoppingBag, tone: "bg-gold/15 text-gold-dark", ring: "ring-gold" },
+    { key: "free", href: "/admin/books?filter=free", label: "Free Downloads", count: freeCount, Icon: Download, tone: "bg-success/15 text-success", ring: "ring-success" },
+  ];
+
   return (
     <div>
       {/* Header */}
@@ -52,55 +60,53 @@ export default async function AdminBooksPage({
             Add, configure and manage books for sale or free download. PDFs are stored securely in Supabase Storage.
           </p>
         </div>
-        <Link href="/admin/books/new" className="btn-primary px-5 py-2.5 text-sm font-semibold shadow-sm">
-          + Add New Book
+        <Link
+          href="/admin/books/new"
+          className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold shadow-sm"
+        >
+          <Plus size={16} strokeWidth={2.5} />
+          Add New Book
         </Link>
       </div>
 
-      {/* Tabs */}
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Link
-          href="/admin/books"
-          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-            filter === "all"
-              ? "bg-ink text-white"
-              : "border border-line bg-white text-ink/75 hover:border-ink/30"
-          }`}
-        >
-          All Books <span className={filter === "all" ? "text-white/70" : "text-muted"}>({allCount})</span>
-        </Link>
-        <Link
-          href="/admin/books?filter=sale"
-          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-            filter === "sale"
-              ? "bg-ink text-white"
-              : "border border-line bg-white text-ink/75 hover:border-ink/30"
-          }`}
-        >
-          For Sale <span className={filter === "sale" ? "text-white/70" : "text-muted"}>({saleCount})</span>
-        </Link>
-        <Link
-          href="/admin/books?filter=free"
-          className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-            filter === "free"
-              ? "bg-ink text-white"
-              : "border border-line bg-white text-ink/75 hover:border-ink/30"
-          }`}
-        >
-          Free Downloads <span className={filter === "free" ? "text-white/70" : "text-muted"}>({freeCount})</span>
-        </Link>
+      {/* Stat cards double as filter tabs */}
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {stats.map(({ key, href, label, count, Icon, tone, ring }) => {
+          const active = filter === key;
+          return (
+            <Link
+              key={key}
+              href={href}
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-4 rounded-2xl border bg-white p-4 transition hover:shadow-md ${
+                active ? `border-transparent ring-2 ${ring} shadow-sm` : "border-line"
+              }`}
+            >
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tone}`}>
+                <Icon size={20} />
+              </span>
+              <span>
+                <span className="block text-2xl font-semibold leading-none text-ink">{count}</span>
+                <span className="mt-1 block text-xs font-medium tracking-wide text-muted uppercase">{label}</span>
+              </span>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Search */}
-      <form className="mt-4 flex max-w-md gap-2" action="/admin/books">
+      <form className="mt-5 flex max-w-lg gap-2" action="/admin/books">
         {filter !== "all" && <input type="hidden" name="filter" value={filter} />}
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search title, author or slug..."
-          className="input py-2"
-        />
-        <button type="submit" className="btn-primary px-4 py-2 text-sm">
+        <div className="relative flex-1">
+          <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="Search title, author or slug..."
+            className="input py-2 pl-9"
+          />
+        </div>
+        <button type="submit" className="btn-primary px-5 py-2 text-sm">
           Search
         </button>
       </form>
@@ -111,151 +117,140 @@ export default async function AdminBooksPage({
           No books found matching your criteria.
         </div>
       ) : (
-        <div className="card mt-6 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-line bg-paper text-xs tracking-wide text-muted uppercase">
-              <tr>
-                <th className="px-4 py-3">Book</th>
-                <th className="px-4 py-3">Author</th>
-                <th className="px-4 py-3">Pricing</th>
-                <th className="px-4 py-3">Distribution Channels</th>
-                <th className="px-4 py-3">Storage PDF</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {books.map((b) => (
-                <tr key={b.id} className="align-middle hover:bg-paper/50 transition-colors">
-                  {/* Book Title & Vol */}
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-4 h-8 rounded shrink-0 shadow-xs"
-                        style={{ backgroundColor: b.cover_bg || "#13233f" }}
-                        title={`Theme: ${b.cover_bg}`}
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-ink">{b.title}</span>
-                          {b.volume != null && !b.hide_volume_label && (
-                            <span className="rounded bg-paper border border-line px-1.5 py-0.5 text-[0.65rem] font-bold uppercase text-muted">
-                              Vol {b.volume}
-                            </span>
-                          )}
-                          {b.adults_only && (
-                            <span className="rounded bg-danger/10 px-1.5 py-0.5 text-[0.65rem] font-bold text-danger">
-                              18+
-                            </span>
+        <div className="card mt-6 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="border-b border-line bg-cream/60 text-[0.7rem] font-semibold tracking-wider text-ink/60 uppercase">
+                <tr>
+                  <th className="px-5 py-3.5">Book</th>
+                  <th className="px-5 py-3.5">Author</th>
+                  <th className="px-5 py-3.5 text-right">Price</th>
+                  <th className="px-5 py-3.5">Availability</th>
+                  <th className="px-5 py-3.5">PDF File</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {books.map((b) => (
+                  <tr key={b.id} className="align-middle transition-colors hover:bg-gold/5">
+                    {/* Book Title & Vol */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3.5">
+                        <div
+                          className="flex h-12 w-9 shrink-0 items-center justify-center rounded-md font-serif text-sm font-semibold text-white/90 uppercase shadow-sm"
+                          style={{ backgroundColor: b.cover_bg || "#13233f" }}
+                          title={`Theme: ${b.cover_bg}`}
+                        >
+                          {b.title.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium leading-snug text-ink">{b.title}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {b.volume != null && !b.hide_volume_label && (
+                              <span className="whitespace-nowrap rounded-md bg-ink/5 px-1.5 py-0.5 text-[0.65rem] font-bold text-ink/70 uppercase">
+                                Vol {b.volume}
+                              </span>
+                            )}
+                            {b.adults_only && (
+                              <span className="rounded-md bg-danger/10 px-1.5 py-0.5 text-[0.65rem] font-bold text-danger">
+                                18+
+                              </span>
+                            )}
+                            <span className="truncate font-mono text-xs text-muted">/books/{b.slug}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Author */}
+                    <td className="whitespace-nowrap px-5 py-4 text-ink/80">{b.author}</td>
+
+                    {/* Pricing */}
+                    <td className="whitespace-nowrap px-5 py-4 text-right">
+                      {b.for_sale ? (
+                        <div>
+                          <span className="font-semibold text-ink">₹{b.price}</span>
+                          {b.original_price != null && b.original_price > b.price && (
+                            <span className="block text-xs text-muted line-through">₹{b.original_price}</span>
                           )}
                         </div>
-                        <p className="font-mono text-xs text-muted mt-0.5">/books/{b.slug}</p>
+                      ) : (
+                        <span className="text-xs text-muted">—</span>
+                      )}
+                    </td>
+
+                    {/* Distribution Status / Toggles */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <form action={toggleBookStatusAction}>
+                          <input type="hidden" name="id" value={b.id} />
+                          <input type="hidden" name="field" value="for_sale" />
+                          <input type="hidden" name="value" value={b.for_sale ? "false" : "true"} />
+                          <button
+                            type="submit"
+                            title="Click to toggle sale availability"
+                            className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                              b.for_sale
+                                ? "border-gold/40 bg-gold/15 text-gold-dark hover:bg-gold/25"
+                                : "border-line bg-paper text-muted hover:border-ink/40"
+                            }`}
+                          >
+                            {b.for_sale ? "✓ For Sale" : "+ Sell"}
+                          </button>
+                        </form>
+
+                        <form action={toggleBookStatusAction}>
+                          <input type="hidden" name="id" value={b.id} />
+                          <input type="hidden" name="field" value="is_free" />
+                          <input type="hidden" name="value" value={b.is_free ? "false" : "true"} />
+                          <button
+                            type="submit"
+                            title="Click to toggle free download access"
+                            className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                              b.is_free
+                                ? "border-success/40 bg-success/15 text-success hover:bg-success/25"
+                                : "border-line bg-paper text-muted hover:border-ink/40"
+                            }`}
+                          >
+                            {b.is_free ? "✓ Free" : "+ Free"}
+                          </button>
+                        </form>
                       </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Author */}
-                  <td className="px-4 py-3.5 text-ink/80">{b.author}</td>
-
-                  {/* Pricing */}
-                  <td className="px-4 py-3.5">
-                    {b.for_sale ? (
-                      <div>
-                        <span className="font-semibold text-ink">₹{b.price}</span>
-                        {b.original_price != null && b.original_price > b.price && (
-                          <span className="ml-1.5 text-xs text-muted line-through">
-                            ₹{b.original_price}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted">Not for sale</span>
-                    )}
-                  </td>
-
-                  {/* Distribution Status / Toggles */}
-                  <td className="px-4 py-3.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* For Sale Toggle */}
-                      <form action={toggleBookStatusAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <input type="hidden" name="field" value="for_sale" />
-                        <input type="hidden" name="value" value={b.for_sale ? "false" : "true"} />
-                        <button
-                          type="submit"
-                          title="Click to toggle sale availability"
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold cursor-pointer border transition ${
-                            b.for_sale
-                              ? "bg-gold/15 border-gold/40 text-gold-dark hover:bg-gold/25"
-                              : "bg-paper border-line text-muted line-through hover:border-ink/40"
-                          }`}
-                        >
-                          {b.for_sale ? "✓ For Sale" : "✕ Not For Sale"}
-                        </button>
-                      </form>
-
-                      {/* Free Download Toggle */}
-                      <form action={toggleBookStatusAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <input type="hidden" name="field" value="is_free" />
-                        <input type="hidden" name="value" value={b.is_free ? "false" : "true"} />
-                        <button
-                          type="submit"
-                          title="Click to toggle free download access"
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold cursor-pointer border transition ${
-                            b.is_free
-                              ? "bg-success/15 border-success/40 text-success hover:bg-success/25"
-                              : "bg-paper border-line text-muted hover:border-ink/40"
-                          }`}
-                        >
-                          {b.is_free ? "✓ Free Download" : "+ Free"}
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-
-                  {/* Storage PDF */}
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-ink/75 truncate max-w-[150px]">
-                        {b.pdf_filename}
-                      </span>
+                    {/* Storage PDF */}
+                    <td className="px-5 py-4">
                       <a
                         href={`/api/admin/books/${b.slug}/pdf`}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded border border-line bg-paper px-2 py-0.5 text-xs text-ink hover:border-gold hover:text-gold-dark transition"
-                        title="Download / View PDF"
+                        title={`Open ${b.pdf_filename}`}
+                        className="group inline-flex max-w-[210px] items-center gap-2 rounded-lg border border-line bg-paper px-2.5 py-1.5 text-xs text-ink/80 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
                       >
-                        PDF ↗
+                        <FileText size={14} className="shrink-0 text-danger/80" />
+                        <span className="truncate font-mono">{b.pdf_filename}</span>
+                        <ExternalLink size={12} className="shrink-0 text-muted group-hover:text-sky-700" />
                       </a>
-                    </div>
-                  </td>
+                    </td>
 
-                  {/* Actions */}
-                  <td className="px-4 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Link
-                        href={`/admin/books/${b.id}`}
-                        className="btn-outline px-3 py-1 text-xs font-medium hover:border-ink"
-                      >
-                        Edit
-                      </Link>
-                      <form action={deleteBookAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <button
-                          type="submit"
-                          className="rounded border border-line px-2.5 py-1 text-xs text-muted hover:border-danger hover:text-danger transition"
-                          title="Delete book"
+                    {/* Actions */}
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/admin/books/${b.id}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:border-sky-600 hover:bg-sky-600 hover:text-white"
                         >
-                          Delete
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                          <Pencil size={13} />
+                          Edit
+                        </Link>
+                        <DeleteBookButton id={b.id} title={b.title} action={deleteBookAction} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
