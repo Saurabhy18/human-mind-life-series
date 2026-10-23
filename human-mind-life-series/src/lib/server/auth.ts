@@ -1,10 +1,12 @@
 import "server-only";
+import { cache } from "react";
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { NextResponse } from "next/server";
 import { SignJWT, jwtVerify } from "jose";
 import { createClient } from "@/lib/supabase/server";
-
+import { getDb } from "@/lib/server/db";
 
 const COOKIE_NAME = "hm_admin";
 const SESSION_HOURS = 8;
@@ -54,8 +56,7 @@ export async function destroySession(): Promise<void> {
   (await cookies()).delete(COOKIE_NAME);
 }
 
-
-export async function isAdmin(): Promise<boolean> {
+export const isLegacyAdmin = cache(async (): Promise<boolean> => {
   const key = secretKey();
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (key && token) {
@@ -66,8 +67,15 @@ export async function isAdmin(): Promise<boolean> {
       // not a legacy admin session, check Supabase auth below
     }
   }
+  return false;
+});
 
-  // Check Supabase authenticated session
+/** Returns the authenticated user's role ("admin" | "user") or null if not logged in. */
+export const getCurrentUserRole = cache(async (): Promise<string | null> => {
+  if (await isLegacyAdmin()) {
+    return "admin";
+  }
+
   try {
     const supabase = await createClient();
     const {
@@ -75,24 +83,47 @@ export async function isAdmin(): Promise<boolean> {
     } = await supabase.auth.getUser();
 
     if (user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
+      // 1. Try Supabase profiles table
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
 
-      if (profile?.role === "admin") {
-        return true;
+        if (profile?.role) {
+          return profile.role;
+        }
+      } catch {}
+
+      // 2. Fallback to server DB profiles table
+      try {
+        const local = getDb()
+          .prepare("SELECT role FROM profiles WHERE id = ?")
+          .get(user.id) as { role?: string } | undefined;
+        if (local?.role) {
+          return local.role;
+        }
+      } catch {}
+
+      // 3. Fallback to app_metadata (service role only) or default to 'user'
+      if (typeof user.app_metadata?.role === "string") {
+        return user.app_metadata.role;
       }
+      return "user";
     }
   } catch {}
 
-  return false;
-}
+  return null;
+});
 
+export const isAdmin = cache(async (): Promise<boolean> => {
+  const role = await getCurrentUserRole();
+  return role === "admin";
+});
 
 /** Returns the currently authenticated Supabase user or null if not logged in. */
-export async function getAuthenticatedUser() {
+export const getAuthenticatedUser = cache(async () => {
   try {
     const supabase = await createClient();
     const {
@@ -102,9 +133,46 @@ export async function getAuthenticatedUser() {
   } catch {
     return null;
   }
-}
+});
 
-/** Call at the top of every admin page, server action and admin API route. */
-export async function requireAdmin(): Promise<void> {
-  if (!(await isAdmin())) redirect("/admin/login");
+/**
+ * Call at the top of every admin page and server action.
+ * Ensures protected admin routes are NOT accessible to users with a different role.
+ */
+export const requireAdmin = cache(async (): Promise<void> => {
+  const isAdm = await isAdmin();
+  if (isAdm) return;
+
+  const user = await getAuthenticatedUser();
+  if (user) {
+    // Authenticated user has a different role ('user') -> cannot access admin routes!
+    redirect("/orders");
+  }
+
+  // Unauthenticated visitor -> redirect to admin login
+  redirect("/admin/login");
+});
+
+/**
+ * Role check for Admin backend API routes.
+ * Returns null if authorized as admin.
+ * Returns 403 Forbidden if user is authenticated with a different role.
+ * Returns 401 Unauthorized if not authenticated.
+ */
+export async function verifyAdminApi(): Promise<NextResponse | null> {
+  const isAdm = await isAdmin();
+  if (isAdm) return null;
+
+  const user = await getAuthenticatedUser();
+  if (user) {
+    return NextResponse.json(
+      { success: false, error: "Forbidden: Access restricted to administrators" },
+      { status: 403 }
+    );
+  }
+
+  return NextResponse.json(
+    { success: false, error: "Unauthorized: Authentication required" },
+    { status: 401 }
+  );
 }

@@ -23,6 +23,8 @@ type Item = {
 
 type Status = {
   orderId: string;
+  orderStatus?: string;
+  paymentProvider?: string;
   packageName: string;
   amount: number;
   currency: string;
@@ -32,25 +34,23 @@ type Status = {
 };
 
 const WORKING: Stage[] = ["PAYMENT_SUCCESSFUL", "PREPARING", "TRANSLATING", "GENERATING"];
-const FINAL: Stage[] = ["READY", "EXPIRED", "FAILED", "PAYMENT_FAILED", "MANUAL_DELIVERY"];
+const FINAL: Stage[] = ["READY", "EXPIRED", "PAYMENT_FAILED"];
 
 /** Customer order page: polls GET /api/orders/:id/status and shows each ebook's progress, then its download button. */
 export function TranslationProgress({ orderRef, gateway }: { orderRef: string; gateway: boolean }) {
   const fragmentToken = useUrlParam("t", "hash", TOKEN_RE);
-  const [storedToken, setStoredToken] = useState<string | null>(null);
-  // After the Cashfree full-page redirect the #t= fragment is gone; recover the token that checkout saved
-  // in this tab's sessionStorage (same-origin, never left the browser). The fragment still takes priority.
-  useEffect(() => {
-    if (fragmentToken) return;
+  const [storedToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
       const t = sessionStorage.getItem(orderTokenKey(orderRef));
-      if (t && TOKEN_RE.test(t)) setStoredToken(t);
+      return t && TOKEN_RE.test(t) ? t : null;
     } catch {
-      /* storage blocked */
+      return null;
     }
-  }, [fragmentToken, orderRef]);
+  });
   const token = fragmentToken ?? storedToken;
   const [status, setStatus] = useState<Status | null>(null);
+  const statusRef = useRef<Status | null>(null);
   const [error, setError] = useState("");
   // Gateway payments are confirmed by re-asking Cashfree (server-side) until the order resolves.
   const paymentResolved = useRef(false); // true once the server reports PAID or FAILED
@@ -62,7 +62,9 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
       // poll (the webhook may be delayed, or — in local dev — unable to reach this machine). Once the
       // payment is PAID/FAILED, switch to the lighter status endpoint for fulfillment progress. The server
       // marks an order PAID only after Cashfree confirms it; the browser never decides.
-      const reverify = gateway && !paymentResolved.current && verifyTries.current < 60;
+      // Reverify with Cashfree gateway only if specifically a gateway order (not manual UPI) and not yet resolved
+      const isGatewayOrder = statusRef.current ? statusRef.current.paymentProvider === "cashfree" : gateway;
+      const reverify = isGatewayOrder && !paymentResolved.current && verifyTries.current < 6;
       if (reverify) verifyTries.current += 1;
       const url = reverify ? "/api/payment/verify" : `/api/orders/${orderRef}/status`;
       const headers: Record<string, string> = {};
@@ -74,12 +76,32 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
         : await fetch(url, { headers, cache: "no-store" });
       const json = (await res.json()) as Status & { success?: boolean; message?: string };
       if (!res.ok || !json.success) {
+        // If verify endpoint rate-limited or transient failure, fallback to status
+        if (reverify) {
+          verifyTries.current = 999;
+          const fallbackRes = await fetch(`/api/orders/${orderRef}/status`, { headers: token ? { "x-order-token": token } : {}, cache: "no-store" });
+          if (fallbackRes.ok) {
+            const fallbackJson = (await fallbackRes.json()) as Status & { success?: boolean; message?: string };
+            if (fallbackJson.success) {
+              setError("");
+              statusRef.current = fallbackJson;
+              setStatus(fallbackJson);
+              if (fallbackJson.paymentStatus === "PAID" || fallbackJson.orderStatus === "verified" || fallbackJson.orderStatus === "delivered" || fallbackJson.paymentStatus === "FAILED") {
+                paymentResolved.current = true;
+              }
+              return;
+            }
+          }
+        }
         setError(json.message ?? "We could not find this order.");
         return;
       }
       setError("");
+      statusRef.current = json;
       setStatus(json);
-      if (json.paymentStatus === "PAID" || json.paymentStatus === "FAILED") paymentResolved.current = true;
+      if (json.paymentStatus === "PAID" || json.orderStatus === "verified" || json.orderStatus === "delivered" || json.paymentStatus === "FAILED") {
+        paymentResolved.current = true;
+      }
     } catch {
       /* temporary network problem — keep polling */
     }
@@ -91,14 +113,20 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
     load();
   }, [load]);
 
+  const isFinalRef = useRef(false);
+  useEffect(() => {
+    if (status && FINAL.includes(status.stage)) {
+      isFinalRef.current = true;
+    }
+  }, [status]);
+
   useEffect(() => {
     const first = setTimeout(load, 0);
     const id = setInterval(() => {
-      setStatus((s) => {
-        if (!s || !FINAL.includes(s.stage)) load();
-        return s;
-      });
-    }, 4000);
+      if (!isFinalRef.current) {
+        load();
+      }
+    }, 3000);
     return () => {
       clearTimeout(first);
       clearInterval(id);
@@ -122,7 +150,7 @@ export function TranslationProgress({ orderRef, gateway }: { orderRef: string; g
   }
   if (!status) return <div className="card p-8 text-center text-muted">Loading your order…</div>;
 
-  const paid = status.paymentStatus === "PAID";
+  const paid = status.paymentStatus === "PAID" || status.orderStatus === "verified" || status.orderStatus === "delivered";
   const many = status.items.length > 1;
   const allReady = status.items.every((i) => i.stage === "READY");
   const working = status.items.some((i) => WORKING.includes(i.stage));

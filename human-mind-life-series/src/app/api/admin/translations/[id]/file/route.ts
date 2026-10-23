@@ -1,4 +1,4 @@
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { getTranslatedBook } from "@/lib/server/adminReports";
 import { getStorage } from "@/lib/server/storageService";
 
@@ -6,7 +6,9 @@ export const runtime = "nodejs";
 
 /** Admin-only download of a translated book (e.g. to check quality or send it manually). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
+
   const tb = getTranslatedBook(Number((await params).id));
   if (!tb) return new Response("Not found", { status: 404 });
   try {

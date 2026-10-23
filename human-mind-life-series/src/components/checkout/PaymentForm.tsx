@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
 import { useAuth } from "@/components/auth/AuthContext";
@@ -19,8 +19,11 @@ type Errors = Record<string, string>;
 export function PaymentForm({ selection, amount, summary, upiId }: { selection: PurchaseSelection; amount: number; summary: string; upiId: string }) {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [buyerName, setBuyerName] = useState("");
-  const [email, setEmail] = useState("");
+  const [manualName, setManualName] = useState<string | null>(null);
+  const defaultName = user ? (user.fullName || (user.email ? user.email.split("@")[0] : "")) : "";
+  const buyerName = manualName !== null ? manualName : defaultName;
+  const email = user?.email || "";
+
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -28,17 +31,6 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const price = formatMoney(amount, "INR");
-
-  useEffect(() => {
-    if (user) {
-      if (!buyerName) {
-        setBuyerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
-      }
-      if (!email && user.email) {
-        setEmail(user.email);
-      }
-    }
-  }, [user, buyerName, email]);
 
   if (loading) {
     return (
@@ -85,11 +77,6 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
       </div>
     );
   }
-
-
-  useEffect(() => () => {
-    if (preview) URL.revokeObjectURL(preview);
-  }, [preview]);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -192,7 +179,7 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
             className="input"
             autoComplete="name"
             value={buyerName}
-            onChange={(e) => setBuyerName(e.target.value)}
+            onChange={(e) => setManualName(e.target.value)}
             required
             maxLength={80}
             {...aria("buyerName")}
@@ -223,7 +210,6 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
           {err("whatsapp")}
         </div>
       </div>
-
 
       <div>
         <label htmlFor="amountPaid" className="label">Amount Paid (₹) *</label>

@@ -7,6 +7,7 @@ import { translationOffered } from "@/config/env.server";
 import { upiQrAvailable } from "@/lib/server/qr";
 import { checkoutMode } from "@/lib/server/paymentService";
 import { bookDeliverable } from "@/lib/server/translation/bookSource";
+import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 import { listDbBooks, dbBookToProductBook, getBookFromDbOrStatic } from "@/lib/server/books";
 import { BookCover } from "@/components/BookCover";
 import { TrackView } from "@/components/tracking/TrackView";
@@ -64,6 +65,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
               cover: <BookCover book={b} size="xs" />,
               deliverable: deliverable[i],
               free: b.free,
+              multilingual: !b.free && bookIsTranslatable(b.slug),
             }))}
             packages={packages}
             individualPrice={PACKAGES.individual.price}

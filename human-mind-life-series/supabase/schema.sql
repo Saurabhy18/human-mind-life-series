@@ -49,6 +49,8 @@ create index if not exists idx_orders_status on orders(status);
 create index if not exists idx_orders_created on orders(created_at desc);
 create index if not exists idx_orders_provider_order on orders(payment_provider, provider_order_id) where provider_order_id is not null;
 create index if not exists idx_orders_cache_key on orders(cache_key);
+create index if not exists idx_orders_customer_id on orders(customer_id);
+create index if not exists idx_orders_email on orders(lower(email));
 
 create table if not exists order_events (
   id bigserial primary key,
@@ -68,6 +70,8 @@ create table if not exists messages (
   handled integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+create index if not exists idx_messages_handled on messages(handled);
 
 create table if not exists free_requests (
   id bigserial primary key,
@@ -92,6 +96,9 @@ create table if not exists free_requests (
   completed_at timestamptz
 );
 
+create index if not exists idx_free_requests_status on free_requests(status);
+create index if not exists idx_free_requests_created on free_requests(created_at desc);
+
 create table if not exists customers (
   id bigserial primary key,
   email text not null unique,
@@ -114,6 +121,9 @@ create table if not exists payments (
   raw_event text,
   created_at timestamptz not null default now()
 );
+
+create index if not exists idx_payments_order_id on payments(order_id);
+create index if not exists idx_payments_created on payments(created_at desc);
 
 create table if not exists translation_jobs (
   id bigserial primary key,
@@ -171,6 +181,8 @@ create table if not exists download_logs (
   user_agent text,
   created_at timestamptz not null default now()
 );
+
+create index if not exists idx_download_logs_order on download_logs(order_id);
 
 create table if not exists order_items (
   id bigserial primary key,

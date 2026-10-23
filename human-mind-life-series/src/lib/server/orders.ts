@@ -226,9 +226,9 @@ export function createOrder(data: NewOrder): { id: number; ref: string } {
   })();
 }
 
-export type OrderFilter = { status?: OrderStatus; q?: string };
+export type OrderFilter = { status?: OrderStatus; q?: string; limit?: number; offset?: number };
 
-export function listOrders(filter: OrderFilter = {}): Order[] {
+export function countFilteredOrders(filter: { status?: OrderStatus; q?: string } = {}): number {
   const where: string[] = [];
   const params: Record<string, string> = {};
   if (filter.status) {
@@ -239,7 +239,27 @@ export function listOrders(filter: OrderFilter = {}): Order[] {
     where.push("(buyer_name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR utr LIKE @q OR ref LIKE @q)");
     params.q = `%${filter.q}%`;
   }
-  const sql = `SELECT * FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT 500`;
+  const sql = `SELECT COUNT(*) AS total FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
+  const row = getDb().prepare(sql).get(params) as { total?: number | string } | undefined;
+  return Number(row?.total || 0);
+}
+
+export function listOrders(filter: OrderFilter = {}): Order[] {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  if (filter.status) {
+    where.push("status = @status");
+    params.status = filter.status;
+  }
+  if (filter.q) {
+    where.push("(buyer_name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR utr LIKE @q OR ref LIKE @q)");
+    params.q = `%${filter.q}%`;
+  }
+  const limit = Math.min(Math.max(Number(filter.limit) || 50, 1), 500);
+  const offset = Math.max(Number(filter.offset) || 0, 0);
+  params.limit = limit;
+  params.offset = offset;
+  const sql = `SELECT * FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT @limit OFFSET @offset`;
   return getDb().prepare(sql).all(params) as Order[];
 }
 

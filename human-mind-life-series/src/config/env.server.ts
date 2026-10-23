@@ -45,7 +45,6 @@ function translationProvider(): TranslationProvider {
 }
 
 export type DatabaseDriver = "supabase";
-const resolvedDatabaseDriver = "supabase" as const;
 
 const storageDriverName = str("STORAGE_DRIVER", "").toLowerCase();
 const storageBucketName = str("SUPABASE_STORAGE_BUCKET", str("BOOK_STORAGE_BUCKET", "site-files"));
@@ -114,7 +113,7 @@ export const ENV = {
     const isTestKey = clientId.toLowerCase().startsWith("test");
     const cashfreeEnv: "sandbox" | "production" =
       explicitEnv === "production"
-        ? "production"
+        ? (isProd ? "production" : "sandbox")
         : explicitEnv === "sandbox"
           ? "sandbox"
           : isTestKey

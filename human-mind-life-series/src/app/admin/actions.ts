@@ -51,14 +51,28 @@ export async function updateStatusAction(formData: FormData): Promise<void> {
   if (!order || !isOrderStatus(status)) throw new Error("Invalid request");
 
   updateOrderStatus(id, status, rawNote || null);
-  // "Payment Verified" by the admin IS the server-side verification for UPI payments: it starts delivery/translation.
+  // "Payment Verified" by the admin IS the server-side verification: it starts delivery/translation.
   if ((status === "verified" || status === "delivered") && order.payment_status !== "PAID") {
-    await markOrderPaid({ orderId: id, provider: "manual_upi", idempotencyKey: `manual_upi:order:${id}`, amount: order.amount, currency: order.currency, providerPaymentId: order.utr });
+    await markOrderPaid({
+      orderId: id,
+      provider: order.payment_provider === "cashfree" ? "cashfree" : "manual_upi",
+      idempotencyKey: `admin_verification:order:${id}:${status}`,
+      amount: order.amount,
+      currency: order.currency,
+      providerPaymentId: order.utr,
+    });
+  } else if (status === "delivered" && order.payment_status === "PAID") {
+    await startFulfillment(id, { retryFailed: true });
   } else if (status === "rejected" && order.payment_status === "PENDING") {
     markOrderPaymentFailed(id, "Payment rejected by admin");
   }
+
+  // Revalidate both admin views and customer-facing views
   revalidatePath("/admin");
   revalidatePath(`/admin/orders/${id}`);
+  revalidatePath("/orders");
+  revalidatePath(`/order/status/${order.ref}`);
+  revalidatePath("/dashboard");
 }
 
 export async function retryTranslationAction(formData: FormData): Promise<void> {

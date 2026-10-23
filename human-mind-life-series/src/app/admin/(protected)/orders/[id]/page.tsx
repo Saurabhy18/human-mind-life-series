@@ -11,7 +11,7 @@ import { formatDate, StatusBadge } from "@/components/admin/StatusBadge";
 import { restartFulfillmentAction, retryTranslationAction, updateStatusAction } from "../../../actions";
 import { orderDownloads, orderJob } from "@/lib/server/adminReports";
 import { OrderLinkTools } from "@/components/admin/OrderLinkTools";
-import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
+import { isBookSourceAvailable } from "@/lib/server/translation/bookSource";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -22,8 +22,7 @@ export default async function AdminOrderPage({ params }: Props) {
 
   const events = getOrderEvents(order.id);
   const rawItems = getOrderItems(order.id);
-  await Promise.all(rawItems.map((i) => ensureBookSource(i.book_slug)));
-  const items = rawItems.map((i) => ({ ...i, job: orderJob(i.cache_key), pdfAvailable: Boolean(getBookSource(i.book_slug)) }));
+  const items = rawItems.map((i) => ({ ...i, job: orderJob(i.cache_key), pdfAvailable: isBookSourceAvailable(i.book_slug) }));
   const downloads = orderDownloads(order.id);
   const utm = order.utm_json ? (JSON.parse(order.utm_json) as Record<string, string>) : null;
   const bookList = items.map((i) => `- ${i.book_title} (${i.target_language})`).join("\n");
@@ -44,11 +43,11 @@ export default async function AdminOrderPage({ params }: Props) {
         <StatusBadge status={order.status} />
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-6">
-          <section className="card p-6">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <div className="space-y-4">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">Order details</h2>
-            <dl className="mt-4 grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+            <dl className="mt-3 grid gap-x-4 gap-y-2.5 text-xs sm:grid-cols-2">
               <Item label="Customer name" value={order.buyer_name} />
               <Item label="Email" value={<a className="underline" href={`mailto:${order.email}`}>{order.email}</a>} />
               <Item label="WhatsApp" value={<a className="underline" href={whatsappLink(undefined, order.whatsapp) ?? "#"} target="_blank" rel="noopener noreferrer">+{order.whatsapp}</a>} />
@@ -91,7 +90,7 @@ export default async function AdminOrderPage({ params }: Props) {
           </section>
 
           {order.screenshot_file && (
-          <section className="card p-6">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">Payment screenshot</h2>
             <p className="mt-1 text-sm text-muted">Compare the amount, UTR and date with your bank / UPI app statement — screenshots can be edited.</p>
             <a href={`/api/admin/orders/${order.id}/screenshot`} target="_blank" className="mt-4 block">
@@ -102,8 +101,8 @@ export default async function AdminOrderPage({ params }: Props) {
           )}
         </div>
 
-        <div className="space-y-6">
-          <section className="card p-6">
+        <div className="space-y-4">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">Ebooks, languages &amp; delivery</h2>
             <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
               <Item label="Payment" value={`${order.payment_status} (${order.payment_provider})`} />
@@ -111,7 +110,7 @@ export default async function AdminOrderPage({ params }: Props) {
             </dl>
             <ul className="mt-4 divide-y divide-line border-y border-line text-sm">
               {items.map((i) => (
-                <li key={i.id} className="py-3">
+                <li key={i.id} className="py-2">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="font-medium">{i.book_title}</span>
                     <span className="font-mono text-xs">{i.source_language} → {i.target_language}</span>
@@ -159,7 +158,7 @@ export default async function AdminOrderPage({ params }: Props) {
             )}
           </section>
 
-          <section className="card p-6">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">Update status</h2>
             <form action={updateStatusAction} className="mt-4 space-y-4">
               <input type="hidden" name="id" value={order.id} />
@@ -180,7 +179,7 @@ export default async function AdminOrderPage({ params }: Props) {
             </form>
           </section>
 
-          <section className="card p-6">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">Deliver the {items.length > 1 ? "ebooks" : "book"}</h2>
             <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted">
               <li>Confirm the payment and set status to <strong>Payment Verified</strong>. Ebooks with a source PDF are then delivered automatically.</li>
@@ -211,7 +210,7 @@ export default async function AdminOrderPage({ params }: Props) {
             </div>
           </section>
 
-          <section className="card p-6">
+          <section className="card p-4 sm:p-5">
             <h2 className="text-xl">History</h2>
             <ol className="mt-4 space-y-3 text-sm">
               {events.map((e) => (

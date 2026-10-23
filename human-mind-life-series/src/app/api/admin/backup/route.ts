@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { getDb } from "@/lib/server/db";
 import { logger, errorMessage } from "@/lib/server/logger";
 
@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
  * Use it before every deployment and on a schedule.
  */
 export async function GET() {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
+
   const tmp = path.join(os.tmpdir(), `hm-backup-${crypto.randomUUID()}.json`);
   try {
     await getDb().backup(tmp);
