@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Cashfree } from "@cashfreepayments/cashfree-js";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
@@ -23,22 +23,14 @@ type Checkout = { provider: "cashfree"; mode: "sandbox" | "production"; paymentS
 export function GatewayCheckout({ selection, amount, currency }: { selection: PurchaseSelection; amount: number; currency: string }) {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
+  const [manualName, setManualName] = useState<string | null>(null);
+  const defaultName = user ? (user.fullName || (user.email ? user.email.split("@")[0] : "")) : "";
+  const customerName = manualName !== null ? manualName : defaultName;
+  const customerEmail = user?.email || "";
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      if (!customerName) {
-        setCustomerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
-      }
-      if (!customerEmail && user.email) {
-        setCustomerEmail(user.email);
-      }
-    }
-  }, [user, customerName, customerEmail]);
 
   if (loading) {
     return (
@@ -203,7 +195,7 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
           className="input"
           autoComplete="name"
           value={customerName}
-          onChange={(e) => setCustomerName(e.target.value)}
+          onChange={(e) => setManualName(e.target.value)}
           required
           maxLength={80}
         />

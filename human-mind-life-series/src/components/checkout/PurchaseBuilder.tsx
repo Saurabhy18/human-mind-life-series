@@ -22,6 +22,7 @@ export type CheckoutBook = {
   /** False when the book's PDF is not on the server (or is unreadable): it cannot be ordered yet. */
   deliverable: boolean;
   free?: boolean;
+  multilingual?: boolean;
 };
 
 type Props = {
@@ -76,20 +77,22 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
     try {
       const saved = sessionStorage.getItem("hm:pending-checkout");
       if (saved) {
-        const parsed = JSON.parse(saved) as PurchaseSelection;
-        if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
-          setPackageId(parsed.packageId);
-        }
-        if (parsed.items?.length) {
-          const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
-          if (itemSlugs.length > 0) setPicked(itemSlugs);
-          const langMap: Record<string, string> = {};
-          parsed.items.forEach((i) => {
-            if (i.language) langMap[i.bookId] = i.language;
-          });
-          setLangs((prev) => ({ ...prev, ...langMap }));
-        }
         sessionStorage.removeItem("hm:pending-checkout");
+        const parsed = JSON.parse(saved) as PurchaseSelection;
+        queueMicrotask(() => {
+          if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
+            setPackageId(parsed.packageId);
+          }
+          if (parsed.items?.length) {
+            const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
+            if (itemSlugs.length > 0) setPicked(itemSlugs);
+            const langMap: Record<string, string> = {};
+            parsed.items.forEach((i) => {
+              if (i.language) langMap[i.bookId] = i.language;
+            });
+            setLangs((prev) => ({ ...prev, ...langMap }));
+          }
+        });
       }
     } catch {}
   }, [books, packages]);
@@ -394,6 +397,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                     name={`language-${b.slug}`}
                     label={selected.length > 1 ? `${b.volumeLabel ?? b.title} — language` : undefined}
                     hint={false}
+                    isMultilingual={b.multilingual}
                   />
                 ))}
               </div>

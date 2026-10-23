@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { getAttribution } from "@/lib/tracking-params";
 import { trackFreeBookRequest } from "@/lib/analytics";
 import { useAuth } from "@/components/auth/AuthContext";
@@ -26,21 +26,16 @@ export function FreeBookForm({
   tone?: "light" | "dark";
 }) {
   const { user } = useAuth();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [manualName, setManualName] = useState<string | null>(null);
+  const [manualEmail, setManualEmail] = useState<string | null>(null);
+  const name = manualName ?? user?.fullName ?? "";
+  const email = manualEmail ?? user?.email ?? "";
+
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const dark = tone === "dark";
-
-  useEffect(() => {
-    if (user) {
-      if (user.fullName && !name) setName(user.fullName);
-      if (user.email && !email) setEmail(user.email);
-    }
-  }, [user]);
-
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -142,7 +137,7 @@ export function FreeBookForm({
           className="input"
           autoComplete="name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => setManualName(e.target.value)}
           required
           maxLength={80}
           {...aria("name")}
@@ -159,7 +154,7 @@ export function FreeBookForm({
           autoComplete="email"
           inputMode="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => setManualEmail(e.target.value)}
           required
           maxLength={120}
           {...aria("email")}

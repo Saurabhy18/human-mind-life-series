@@ -27,13 +27,17 @@ export type JobListRow = {
 export function listJobs(): JobListRow[] {
   return getDb()
     .prepare(`
-      SELECT j.*, tb.id AS translated_book_id,
-             (SELECT COUNT(*) FROM order_items i WHERE i.cache_key = j.cache_key) AS orders
-      FROM translation_jobs j LEFT JOIN translated_books tb ON tb.cache_key = j.cache_key
+      SELECT j.*, tb.id AS translated_book_id, COALESCE(o.cnt, 0) AS orders
+      FROM translation_jobs j
+      LEFT JOIN translated_books tb ON tb.cache_key = j.cache_key
+      LEFT JOIN (
+        SELECT cache_key, COUNT(*) AS cnt FROM order_items WHERE cache_key IS NOT NULL GROUP BY cache_key
+      ) o ON o.cache_key = j.cache_key
       ORDER BY j.id DESC LIMIT 300
     `)
     .all() as JobListRow[];
 }
+
 
 export function translationMetrics() {
   const db = getDb();
@@ -80,12 +84,24 @@ export function recentDownloads(limit = 50) {
 
 export function listCustomers(limit = 100) {
   return getDb()
-    .prepare(`SELECT c.id, c.name, c.email, c.created_at,
-                     (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS orders,
-                     (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id AND o.payment_status = 'PAID') AS paid
-              FROM customers c ORDER BY c.id DESC LIMIT ?`)
+    .prepare(`
+      SELECT c.id, c.name, c.email, c.created_at,
+             COALESCE(oc.total_orders, 0) AS orders,
+             COALESCE(oc.paid_orders, 0) AS paid
+      FROM customers c
+      LEFT JOIN (
+        SELECT customer_id,
+               COUNT(*) AS total_orders,
+               COUNT(CASE WHEN payment_status = 'PAID' THEN 1 END) AS paid_orders
+        FROM orders
+        WHERE customer_id IS NOT NULL
+        GROUP BY customer_id
+      ) oc ON oc.customer_id = c.id
+      ORDER BY c.id DESC LIMIT ?
+    `)
     .all(limit) as { id: number; name: string; email: string; created_at: string; orders: number; paid: number }[];
 }
+
 
 export function getTranslatedBook(id: number) {
   return getDb().prepare("SELECT * FROM translated_books WHERE id = ?").get(id) as
@@ -124,8 +140,14 @@ export function translationMatrix(currentVersion: (bookSlug: string) => string |
     `)
     .all() as { book_slug: string; target_language: string; source_version: string; status: TranslationCell["status"]; progress: number; tb_id: number | null }[];
   const out = new Map<string, Map<string, TranslationCell>>();
+  const versionCache = new Map<string, string | null>();
   for (const r of rows) {
-    if (r.source_version !== currentVersion(r.book_slug)) continue;
+    let ver = versionCache.get(r.book_slug);
+    if (ver === undefined) {
+      ver = currentVersion(r.book_slug);
+      versionCache.set(r.book_slug, ver);
+    }
+    if (r.source_version !== ver) continue;
     if (!out.has(r.book_slug)) out.set(r.book_slug, new Map());
     out.get(r.book_slug)!.set(r.target_language, { status: r.status, translatedBookId: r.tb_id, progress: r.progress });
   }

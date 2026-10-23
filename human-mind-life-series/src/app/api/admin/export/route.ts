@@ -1,4 +1,4 @@
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { itemsForOrders, listOrders, orderAuthor } from "@/lib/server/orders";
 import { STATUS_LABELS } from "@/lib/order-status";
 import { csvCell } from "@/lib/text";
@@ -6,7 +6,8 @@ import { csvCell } from "@/lib/text";
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
 
   const header = ["Order Ref", "Date (UTC)", "Customer", "Email", "WhatsApp", "Package", "Book", "Ebooks (language)", "Author", "Price", "Amount Paid", "Currency", "UTR", "Status", "Note", "Source"];
   const orders = listOrders();

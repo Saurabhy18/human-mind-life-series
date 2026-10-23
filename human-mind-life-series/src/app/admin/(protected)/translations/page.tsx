@@ -48,7 +48,7 @@ export default async function AdminTranslationsPage() {
         </p>
       )}
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <section className="mt-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Translations" value={totals.jobs} />
         <Stat label="Completed" value={totals.completed ?? 0} />
         <Stat label="Failed" value={totals.failed ?? 0} danger={!!totals.failed} />
@@ -60,13 +60,13 @@ export default async function AdminTranslationsPage() {
         {reuse.paid_translated} paid translated ebook(s) served by {totals.completed ?? 0} translation(s). Cost is an estimate from Google&apos;s list prices (${ENV.translation.pricePerMillionCharsUsd}/M chars, ${ENV.translation.pricePerPageUsd}/page) — check your Google Cloud billing for actual charges.
       </p>
 
-      <section className="card mt-8 overflow-x-auto">
+      <section className="card mt-4 overflow-x-auto">
         <h2 className="p-6 pb-0 text-xl">Ebook languages</h2>
         <p className="px-6 pt-1 text-xs text-muted">
           <span className="text-emerald-700">✓</span> available (click to download) · <span className="text-amber-700">⏳</span> queued / processing ·{" "}
           <span className="text-red-700">✕</span> failed · <span>·</span> not generated yet — made automatically the first time someone buys it. Hover a code for the language name.
         </p>
-        <table className="mt-4 w-full text-center text-xs">
+        <table className="mt-2 w-full text-center text-xs">
           <thead className="border-y border-line bg-paper text-muted">
             <tr>
               <th className="sticky left-0 bg-paper px-4 py-2 text-left uppercase">Book</th>
@@ -107,7 +107,7 @@ export default async function AdminTranslationsPage() {
         </section>
       )}
 
-      <section className="card mt-8 overflow-x-auto">
+      <section className="card mt-4 overflow-x-auto">
         <h2 className="p-6 pb-0 text-xl">Translation jobs</h2>
         {jobs.length === 0 ? (
           <p className="p-6 text-sm text-muted">No translations yet. A job is created the first time a paid order needs a new book + language.</p>
@@ -115,38 +115,38 @@ export default async function AdminTranslationsPage() {
           <table className="mt-4 w-full text-left text-sm">
             <thead className="border-y border-line bg-paper text-xs tracking-wide text-muted uppercase">
               <tr>
-                <th className="px-4 py-3">Book</th>
-                <th className="px-4 py-3">Source → Target</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Orders</th>
-                <th className="px-4 py-3">Size</th>
-                <th className="px-4 py-3">API cost</th>
-                <th className="px-4 py-3">File</th>
-                <th className="px-4 py-3" />
+                <th className="px-3 py-2 text-xs font-semibold">Book</th>
+                <th className="px-3 py-2 text-xs font-semibold">Source → Target</th>
+                <th className="px-3 py-2 text-xs font-semibold">Status</th>
+                <th className="px-3 py-2 text-xs font-semibold">Created</th>
+                <th className="px-3 py-2 text-xs font-semibold">Orders</th>
+                <th className="px-3 py-2 text-xs font-semibold">Size</th>
+                <th className="px-3 py-2 text-xs font-semibold">API cost</th>
+                <th className="px-3 py-2 text-xs font-semibold">File</th>
+                <th className="px-3 py-2 text-xs font-semibold" />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {jobs.map((j) => (
                 <tr key={j.id} className="align-top">
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-1.5">
                     <p className="font-medium">{j.book_slug}</p>
                     <p className="font-mono text-[0.7rem] text-muted">{j.source_version} · {j.strategy}</p>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs">{j.source_language} → {j.target_language}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-1.5 font-mono text-xs">{j.source_language} → {j.target_language}</td>
+                  <td className="px-3 py-1.5">
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${JOB_STYLE[j.status] ?? JOB_STYLE.NOT_STARTED}`}>{j.status}</span>
                     {j.status === "PROCESSING" && <p className="mt-1 text-xs text-muted">{j.phase} · {j.progress}%</p>}
                     {j.last_error && j.status !== "COMPLETED" && <p className="mt-1 max-w-[220px] text-xs text-red-700">{j.last_error}</p>}
                   </td>
-                  <td className="px-4 py-3 text-xs">{formatDate(j.created_at)}</td>
-                  <td className="px-4 py-3">{j.orders}</td>
-                  <td className="px-4 py-3 text-xs">{j.pages_translated ? `${j.pages_translated} pages` : `${j.chars_translated.toLocaleString("en-IN")} chars`}</td>
-                  <td className="px-4 py-3 text-xs">${j.est_cost_usd.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-xs">
+                  <td className="px-3 py-1.5 text-xs">{formatDate(j.created_at)}</td>
+                  <td className="px-3 py-1.5">{j.orders}</td>
+                  <td className="px-3 py-1.5 text-xs">{j.pages_translated ? `${j.pages_translated} pages` : `${j.chars_translated.toLocaleString("en-IN")} chars`}</td>
+                  <td className="px-3 py-1.5 text-xs">${j.est_cost_usd.toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-xs">
                     {j.translated_book_id ? <a className="text-gold-dark underline" href={`/api/admin/translations/${j.translated_book_id}/file`}>Download</a> : "—"}
                   </td>
-                  <td className="px-4 py-3">{j.status === "FAILED" && <RetryButton jobId={j.id} />}</td>
+                  <td className="px-3 py-1.5">{j.status === "FAILED" && <RetryButton jobId={j.id} />}</td>
                 </tr>
               ))}
             </tbody>
@@ -154,7 +154,7 @@ export default async function AdminTranslationsPage() {
         )}
       </section>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <section className="card p-6">
           <h2 className="text-xl">Books</h2>
           <ul className="mt-3 divide-y divide-line text-sm">
@@ -224,7 +224,7 @@ export default async function AdminTranslationsPage() {
 
 function Stat({ label, value, danger }: { label: string; value: React.ReactNode; danger?: boolean }) {
   return (
-    <div className="card p-4">
+    <div className="card p-2.5">
       <p className="text-xs text-muted">{label}</p>
       <p className={`mt-1 font-serif text-2xl ${danger ? "text-red-700" : ""}`}>{value}</p>
     </div>

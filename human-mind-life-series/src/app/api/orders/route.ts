@@ -2,15 +2,16 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { fieldErrors, orderSchema, sanitizeTracking } from "@/lib/validation";
-import { createOrder, getOrder, upsertCustomer, utrExists, type NewOrder } from "@/lib/server/orders";
+import { countFilteredOrders, createOrder, getOrder, getOrdersByEmail, itemsForOrders, listOrders, upsertCustomer, utrExists, type NewOrder } from "@/lib/server/orders";
 import { deleteScreenshot, MAX_SCREENSHOT_BYTES, saveScreenshot, UploadError } from "@/lib/server/uploads";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp, hashIp, isSameOrigin } from "@/lib/server/request";
 import { parseItemsField, readSelection, validatePurchase, type ValidPurchase } from "@/lib/server/purchase";
 import { issueAccessToken } from "@/lib/server/fulfillment";
-import { getAuthenticatedUser } from "@/lib/server/auth";
+import { getAuthenticatedUser, getCurrentUserRole, isAdmin } from "@/lib/server/auth";
 import { checkoutMode, gatewayEnabled, upiEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
+import { isOrderStatus, type OrderStatus } from "@/lib/order-status";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,96 @@ function purchaseFields(p: ValidPurchase): Pick<NewOrder, "package_type" | "prod
 }
 
 /**
+ * GET /api/orders
+ * Returns paginated orders.
+ * Role check:
+ *  - admin: returns paginated orders across all customers (15 per page by default)
+ *  - user: returns paginated orders only for this authenticated customer (15 per page by default)
+ *  - unauthenticated: returns 401
+ */
+export async function GET(req: Request) {
+  const user = await getAuthenticatedUser();
+  const isAdm = await isAdmin();
+
+  if (!user && !isAdm) {
+    return fail(401, "Authentication required.");
+  }
+
+  const role = await getCurrentUserRole();
+  const url = new URL(req.url);
+  const rawPage = parseInt(url.searchParams.get("page") || "1", 10);
+  const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
+  const rawPageSize = parseInt(url.searchParams.get("pageSize") || url.searchParams.get("limit") || "15", 10);
+  const pageSize = Math.min(Math.max(1, isNaN(rawPageSize) ? 15 : rawPageSize), 100);
+
+  if (role === "admin") {
+    const statusParam = url.searchParams.get("status") || undefined;
+    const status = isOrderStatus(statusParam) ? (statusParam as OrderStatus) : undefined;
+    const q = (url.searchParams.get("q") || "").trim().slice(0, 100);
+
+    const total = countFilteredOrders({ status, q: q || undefined });
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const orders = listOrders({
+      status,
+      q: q || undefined,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+    const items = itemsForOrders(orders.map((o) => o.id));
+    const ordersWithItems = orders.map((o) => ({
+      ...o,
+      items: items.get(o.id) ?? [],
+    }));
+
+    return NextResponse.json({
+      success: true,
+      orders: ordersWithItems,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    });
+  }
+
+  // Regular user: only their own orders
+  const email = user?.email?.toLowerCase();
+  if (!email) {
+    return NextResponse.json({
+      success: true,
+      orders: [],
+      pagination: { page: 1, pageSize, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+    });
+  }
+
+  const allUserOrders = getOrdersByEmail(email);
+  const total = allUserOrders.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pagedOrders = allUserOrders.slice((page - 1) * pageSize, page * pageSize);
+  const items = itemsForOrders(pagedOrders.map((o) => o.id));
+  const ordersWithItems = pagedOrders.map((o) => ({
+    ...o,
+    items: items.get(o.id) ?? [],
+  }));
+
+  return NextResponse.json({
+    success: true,
+    orders: ordersWithItems,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    },
+  });
+}
+
+/**
  * POST /api/orders
  *  - multipart/form-data → UPI QR flow: "Payment completed?" submission (UTR + screenshot), verified by the admin.
  *  - application/json    → payment-gateway flow: creates a PENDING order before checkout (only when a gateway is enabled).
@@ -51,9 +142,6 @@ export async function POST(req: Request) {
   if (!limit.ok) return fail(429, `Too many submissions. Please try again in ${Math.ceil(limit.retryAfterSec / 60)} minutes.`);
 
   const user = await getAuthenticatedUser();
-  if (!user || !user.email) {
-    return fail(401, "You must be signed in to place an order. Please log in or create an account to continue.", { auth: "login_required" });
-  }
 
   if ((req.headers.get("content-type") || "").includes("application/json")) return createGatewayOrder(req, ip, user);
   return createUpiOrder(req, ip, user);
@@ -74,7 +162,7 @@ const gatewayOrderSchema = z.object({
   website: z.string().optional(),
 });
 
-async function createGatewayOrder(req: Request, ip: string, user: NonNullable<Awaited<ReturnType<typeof getAuthenticatedUser>>>) {
+async function createGatewayOrder(req: Request, ip: string, user: Awaited<ReturnType<typeof getAuthenticatedUser>>) {
   if (!gatewayEnabled()) return fail(404, "Online card/UPI checkout is not enabled.");
   let body: unknown;
   try {
@@ -92,8 +180,11 @@ async function createGatewayOrder(req: Request, ip: string, user: NonNullable<Aw
   if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
 
   try {
-    const customerEmail = user.email!.toLowerCase();
-    const customerName = (data.customerName || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
+    const customerEmail = (user?.email || data.customerEmail || "").toLowerCase();
+    if (!customerEmail) {
+      return fail(422, "Please enter your email address to continue.", { customerEmail: "Please enter your email address." });
+    }
+    const customerName = (data.customerName || (typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
     const customerId = upsertCustomer({ email: customerEmail, name: customerName });
     const { id, ref } = createOrder({
       ...purchaseFields(checked.purchase),
@@ -135,7 +226,7 @@ async function createGatewayOrder(req: Request, ip: string, user: NonNullable<Aw
 
 // ----------------------------------------------------------------- UPI flow --
 
-async function createUpiOrder(req: Request, ip: string, user: NonNullable<Awaited<ReturnType<typeof getAuthenticatedUser>>>) {
+async function createUpiOrder(req: Request, ip: string, user: Awaited<ReturnType<typeof getAuthenticatedUser>>) {
   if (!upiEnabled()) return fail(404, "Manual UPI payment is not enabled.");
   const length = Number(req.headers.get("content-length") || 0);
   if (length > MAX_SCREENSHOT_BYTES + 64 * 1024) return fail(413, "The screenshot is too large. Maximum size is 5 MB.");
@@ -198,8 +289,8 @@ async function createUpiOrder(req: Request, ip: string, user: NonNullable<Awaite
   }
 
   try {
-    const customerEmail = user.email!.toLowerCase();
-    const customerName = (data.buyerName || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
+    const customerEmail = (user?.email || data.email).toLowerCase();
+    const customerName = (data.buyerName || (typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
     const customerId = upsertCustomer({ email: customerEmail, name: customerName, whatsapp: data.whatsapp || null });
     const { id, ref } = createOrder({
       ...purchaseFields(checked.purchase),

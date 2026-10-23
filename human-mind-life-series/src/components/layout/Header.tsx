@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, LayoutDashboard, LogOut, Package, User } from "lucide-react";
 import { IconClose, IconMenu } from "../icons";
 import { CurrencySelect } from "../currency/CurrencySelect";
@@ -84,20 +84,21 @@ function ProfileMenu({
             <p className="truncate text-sm font-semibold text-ink">{name}</p>
             {email && <p className="truncate text-xs text-muted">{email}</p>}
           </div>
-          <Link href="/profile" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
-            <User size={16} className="text-gold-dark" />
-            Profile
-          </Link>
-          <Link href="/orders" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
-            <Package size={16} className="text-gold-dark" />
-            My Orders
-          </Link>
-          {isAdmin && (
+          {isAdmin ? (
             <Link href="/admin" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
               <LayoutDashboard size={16} className="text-gold-dark" />
               Admin Panel
             </Link>
+          ) : (
+            <Link href="/orders" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+              <Package size={16} className="text-gold-dark" />
+              My Orders
+            </Link>
           )}
+          <Link href="/profile" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+            <User size={16} className="text-gold-dark" />
+            Profile
+          </Link>
           <div className="my-1 border-t border-line" />
           <button
             type="button"
@@ -117,18 +118,29 @@ function ProfileMenu({
   );
 }
 
+const emptySubscribe = () => () => {};
+
 export function Header() {
   const pathname = usePathname();
   const { user, role, loading, signOut } = useAuth();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   // The menu remembers the page it was opened on, so it closes itself after navigation.
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === pathname;
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const onScroll = () => setScrolled(window.scrollY > 8);
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const isScrolled = window.scrollY > 8;
+          setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -240,7 +252,7 @@ export function Header() {
               <>
                 {user ? (
                   <>
-                    {role === "admin" && (
+                    {role === "admin" ? (
                       <li>
                         <Link
                           href="/admin"
@@ -253,6 +265,17 @@ export function Header() {
                           </span>
                         </Link>
                       </li>
+                    ) : (
+                      <li>
+                        <Link
+                          href="/orders"
+                          onClick={() => setOpenOn(null)}
+                          className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
+                        >
+                          <Package size={22} className="text-gold-dark" />
+                          <span>My Orders</span>
+                        </Link>
+                      </li>
                     )}
                     <li>
                       <Link
@@ -262,16 +285,6 @@ export function Header() {
                       >
                         <User size={22} className="text-gold-dark" />
                         <span>Profile</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/orders"
-                        onClick={() => setOpenOn(null)}
-                        className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
-                      >
-                        <Package size={22} className="text-gold-dark" />
-                        <span>My Orders</span>
                       </Link>
                     </li>
                     <li className="py-3">

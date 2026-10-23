@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { ENV } from "@/config/env.server";
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { getOrder } from "@/lib/server/orders";
 import { getStorage } from "@/lib/server/storageService";
 import { resolveScreenshotPath, screenshotStorageKey } from "@/lib/server/uploads";
@@ -9,7 +9,8 @@ export const runtime = "nodejs";
 
 /** Payment screenshots are only ever served to a logged-in admin. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
 
   const { id } = await params;
   const order = getOrder(Number(id));
