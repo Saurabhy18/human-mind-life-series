@@ -7,6 +7,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import nextEnv from "@next/env";
+
+nextEnv.loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hm-test-"));
 fs.mkdirSync(path.join(dir, "books"), { recursive: true });

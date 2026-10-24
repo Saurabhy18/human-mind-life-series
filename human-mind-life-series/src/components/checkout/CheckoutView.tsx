@@ -7,6 +7,7 @@ import { translationOffered } from "@/config/env.server";
 import { upiQrAvailable } from "@/lib/server/qr";
 import { checkoutMode } from "@/lib/server/paymentService";
 import { bookDeliverable } from "@/lib/server/translation/bookSource";
+import { bookIsTranslatable } from "@/lib/server/orderLanguage";
 import { listDbBooks, dbBookToProductBook, getBookFromDbOrStatic } from "@/lib/server/books";
 import { BookCover } from "@/components/BookCover";
 import { TrackView } from "@/components/tracking/TrackView";
@@ -25,7 +26,7 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
   const packages = PACKAGE_IDS.map((id) => PACKAGES[id]).filter((p) => p.books >= 1 && p.books <= allBooks.length);
   const pkg = PACKAGES[packageId] ?? packages[0];
   const single = books.length === 1 && pkg.books === 1 ? getBookFromDbOrStatic(books[0]) : undefined;
-  const tracked = single ? { slug: single.slug, label: single.label, price: pkg.price } : { slug: pkg.id, label: pkg.name, price: pkg.price };
+  const tracked = single ? { slug: single.slug, label: single.label, price: single.price } : { slug: pkg.id, label: pkg.name, price: pkg.price };
 
   const mode = checkoutMode();
   const deliverable = await Promise.all(allBooks.map((b) => bookDeliverable(b)));
@@ -64,6 +65,9 @@ export async function CheckoutView({ packageId, books, lang, backHref }: { packa
               cover: <BookCover book={b} size="xs" />,
               deliverable: deliverable[i],
               free: b.free,
+              multilingual: !b.free && bookIsTranslatable(b.slug),
+              price: b.price,
+              originalPrice: b.originalPrice,
             }))}
             packages={packages}
             individualPrice={PACKAGES.individual.price}

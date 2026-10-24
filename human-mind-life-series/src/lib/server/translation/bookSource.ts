@@ -22,6 +22,7 @@ export type BookSource = {
 const versionCache = new Map<string, { mtimeMs: number; size: number; version: string }>();
 const resolvedPaths = new Map<string, string>();
 const inFlightSync = new Map<string, Promise<string | null>>();
+const sourceCache = new Map<string, { at: number; source: BookSource | null }>();
 
 function findExistingLocalPath(slug: string): string | null {
   const registered = resolvedPaths.get(slug);
@@ -30,14 +31,17 @@ function findExistingLocalPath(slug: string): string | null {
       const s = fs.statSync(registered);
       if (s.isFile() && s.size > 0) return registered;
     } catch {
-      // file no longer exists at registered path
+      resolvedPaths.delete(slug);
     }
   }
 
   const primary = path.join(/*turbopackIgnore: true*/ PRIVATE_BOOKS_DIR, `${slug}.pdf`);
   try {
     const s = fs.statSync(primary);
-    if (s.isFile() && s.size > 0) return primary;
+    if (s.isFile() && s.size > 0) {
+      resolvedPaths.set(slug, primary);
+      return primary;
+    }
   } catch {
     // primary not found
   }
@@ -45,7 +49,10 @@ function findExistingLocalPath(slug: string): string | null {
   const fallback = path.join(os.tmpdir(), "books", `${slug}.pdf`);
   try {
     const s = fs.statSync(fallback);
-    if (s.isFile() && s.size > 0) return fallback;
+    if (s.isFile() && s.size > 0) {
+      resolvedPaths.set(slug, fallback);
+      return fallback;
+    }
   } catch {
     // fallback not found
   }
@@ -54,16 +61,42 @@ function findExistingLocalPath(slug: string): string | null {
 }
 
 const failedSyncs = new Map<string, number>();
-const FAILED_SYNC_TTL = 60_000; // 60 seconds
+const FAILED_SYNC_TTL = 300_000; // 5 minutes cache for failed downloads
 
 export function clearBookSourceCache(slug?: string) {
   if (slug) {
+    sourceCache.delete(slug);
     failedSyncs.delete(slug);
     resolvedPaths.delete(slug);
   } else {
     failedSyncs.clear();
     resolvedPaths.clear();
+    sourceCache.clear();
   }
+}
+
+/**
+ * Lightweight check to know whether a book source PDF is present locally or configured in database/storage.
+ * Does NOT download entire PDF files over the network during page renders.
+ */
+export function isBookSourceAvailable(slugOrBook: string | Book): boolean {
+  const slug = typeof slugOrBook === "string" ? slugOrBook : slugOrBook.slug;
+  if (!slug) return false;
+
+  // 1. Check local filesystem
+  if (findExistingLocalPath(slug)) return true;
+
+  // 2. Check cached source
+  const cached = sourceCache.get(slug);
+  if (cached?.source) return true;
+
+  // 3. Check database record
+  try {
+    const dbBook = getDbBookBySlug(slug);
+    if (dbBook?.pdf_filename) return true;
+  } catch {}
+
+  return false;
 }
 
 /**
@@ -133,6 +166,7 @@ export async function ensureBookSource(slugOrBook: string | Book): Promise<strin
 
       failedSyncs.delete(slug);
       resolvedPaths.set(slug, targetPath);
+      sourceCache.delete(slug);
       return targetPath;
     } catch (err) {
       failedSyncs.set(slug, Date.now());
@@ -152,27 +186,51 @@ export function getBookSource(slugOrBook: string | Book): BookSource | null {
   const slug = typeof slugOrBook === "string" ? slugOrBook : slugOrBook.slug;
   if (!slug) return null;
 
+  const cachedResult = sourceCache.get(slug);
+  if (cachedResult && Date.now() - cachedResult.at < 30_000) {
+    return cachedResult.source;
+  }
+
   const filePath = findExistingLocalPath(slug);
-  if (!filePath) return null;
+  if (!filePath) {
+    sourceCache.set(slug, { at: Date.now(), source: null });
+    return null;
+  }
 
   let stat: fs.Stats;
   try {
     stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size === 0) return null;
+    if (!stat.isFile() || stat.size === 0) {
+      sourceCache.set(slug, { at: Date.now(), source: null });
+      return null;
+    }
   } catch {
+    sourceCache.set(slug, { at: Date.now(), source: null });
     return null;
   }
 
   const cached = versionCache.get(filePath);
   let version = cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size ? cached.version : "";
   if (!version) {
-    const hash = crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex").slice(0, 12);
+    let hash = "";
+    try {
+      const fd = fs.openSync(filePath, "r");
+      const readLen = Math.min(65536, stat.size);
+      const buf = Buffer.alloc(readLen);
+      fs.readSync(fd, buf, 0, readLen, 0);
+      fs.closeSync(fd);
+      hash = crypto.createHash("sha256").update(buf).update(`${stat.size}-${stat.mtimeMs}`).digest("hex").slice(0, 12);
+    } catch {
+      hash = crypto.createHash("sha256").update(`${stat.size}-${stat.mtimeMs}`).digest("hex").slice(0, 12);
+    }
     version = `v-${hash}`;
     versionCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, version });
   }
   const book = typeof slugOrBook === "string" ? getBook(slugOrBook) : slugOrBook;
   const sourceLanguage = book?.sourceLanguage ?? "en";
-  return { slug, sourceLanguage, filePath, version, bytes: stat.size };
+  const result: BookSource = { slug, sourceLanguage, filePath, version, bytes: stat.size };
+  sourceCache.set(slug, { at: Date.now(), source: result });
+  return result;
 }
 
 const verifiedVersions = new Map<string, boolean>();

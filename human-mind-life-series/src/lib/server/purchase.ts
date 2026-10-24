@@ -109,13 +109,17 @@ export async function validatePurchase(packageId: unknown, rawItems: unknown): P
   items.sort((a, b) => byVolume(a.book_slug) - byVolume(b.book_slug));
 
   const single = pkg.books === 1 ? getBookFromDbOrStatic(items[0].book_slug)! : null;
+  if (single && (single.free || single.price <= 0)) {
+    return { ok: false, field: "items", message: "This ebook is free and does not require payment." };
+  }
+  const purchaseAmount = single ? single.price : pkg.price;
   const volumes = items.map((it) => getBookFromDbOrStatic(it.book_slug)?.volume ?? 0).filter((v) => v > 0);
   return {
     ok: true,
     purchase: {
       packageId: pkg.id,
       packageName: pkg.name,
-      amount: pkg.price,
+      amount: purchaseAmount,
       currency: pkg.currency,
       productSlug: single ? single.slug : pkg.id,
       productTitle: single

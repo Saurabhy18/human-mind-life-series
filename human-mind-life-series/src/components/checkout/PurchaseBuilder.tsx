@@ -22,6 +22,9 @@ export type CheckoutBook = {
   /** False when the book's PDF is not on the server (or is unreadable): it cannot be ordered yet. */
   deliverable: boolean;
   free?: boolean;
+  multilingual?: boolean;
+  price?: number;
+  originalPrice?: number | null;
 };
 
 type Props = {
@@ -76,25 +79,30 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
     try {
       const saved = sessionStorage.getItem("hm:pending-checkout");
       if (saved) {
-        const parsed = JSON.parse(saved) as PurchaseSelection;
-        if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
-          setPackageId(parsed.packageId);
-        }
-        if (parsed.items?.length) {
-          const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
-          if (itemSlugs.length > 0) setPicked(itemSlugs);
-          const langMap: Record<string, string> = {};
-          parsed.items.forEach((i) => {
-            if (i.language) langMap[i.bookId] = i.language;
-          });
-          setLangs((prev) => ({ ...prev, ...langMap }));
-        }
         sessionStorage.removeItem("hm:pending-checkout");
+        const parsed = JSON.parse(saved) as PurchaseSelection;
+        queueMicrotask(() => {
+          if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
+            setPackageId(parsed.packageId);
+          }
+          if (parsed.items?.length) {
+            const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
+            if (itemSlugs.length > 0) setPicked(itemSlugs);
+            const langMap: Record<string, string> = {};
+            parsed.items.forEach((i) => {
+              if (i.language) langMap[i.bookId] = i.language;
+            });
+            setLangs((prev) => ({ ...prev, ...langMap }));
+          }
+        });
       }
     } catch {}
   }, [books, packages]);
 
   const selected = books.filter((b) => picked.includes(b.slug)); // always in series order
+  const singleBook = pkg.books === 1 && selected.length === 1 ? selected[0] : null;
+  const effectivePrice = singleBook?.price !== undefined ? singleBook.price : pkg.price;
+  const effectiveOriginalPrice = singleBook?.originalPrice !== undefined ? singleBook.originalPrice : pkg.originalPrice;
   const complete = selected.length === pkg.books;
   const orderable = books.filter((b) => b.deliverable).length;
   // A package can only be paid for when every ebook in it can be delivered.
@@ -164,7 +172,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
   if (step === "pay") {
     return (
       <div ref={payRef} className="scroll-mt-28">
-        <OrderSummary pkg={pkg} items={summaryItems}>
+        <OrderSummary pkg={pkg} items={summaryItems} price={effectivePrice} originalPrice={effectiveOriginalPrice}>
           <button type="button" onClick={() => setStep("choose")} className="btn-outline mt-5 w-full">
             Change selection
           </button>
@@ -258,11 +266,11 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                     </span>
                   </div>
                   <div className="mt-6">
-                    <GatewayCheckout selection={selection} amount={pkg.price} currency={pkg.currency} />
+                    <GatewayCheckout selection={selection} amount={effectivePrice} currency={pkg.currency} />
                   </div>
                 </section>
               ) : (
-                upi && <UpiPayment settings={upi} selection={selection} amount={pkg.price} summary={summary} />
+                upi && <UpiPayment settings={upi} selection={selection} amount={effectivePrice} summary={summary} />
               )}
             </div>
           ) : mode === "gateway" ? (
@@ -270,11 +278,11 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
               <p className="eyebrow">Step 4 · Payment</p>
               <h2 id="gw" className="mt-2 text-2xl">Pay securely</h2>
               <div className="mt-6">
-                <GatewayCheckout selection={selection} amount={pkg.price} currency={pkg.currency} />
+                <GatewayCheckout selection={selection} amount={effectivePrice} currency={pkg.currency} />
               </div>
             </section>
           ) : (
-            upi && <UpiPayment settings={upi} selection={selection} amount={pkg.price} summary={summary} />
+            upi && <UpiPayment settings={upi} selection={selection} amount={effectivePrice} summary={summary} />
           )}
         </div>
       </div>
@@ -354,6 +362,11 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                           Free Book
                         </span>
                       )}
+                      {pkg.books === 1 && !b.free && b.price !== undefined && (
+                        <span className="mt-1 block text-xs font-semibold text-gold-dark">
+                          ₹{b.price}
+                        </span>
+                      )}
                       {unavailable && <span className="mt-1 block text-xs font-semibold text-gold-dark">{NOT_AVAILABLE}</span>}
                     </span>
                     <span
@@ -394,6 +407,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                     name={`language-${b.slug}`}
                     label={selected.length > 1 ? `${b.volumeLabel ?? b.title} — language` : undefined}
                     hint={false}
+                    isMultilingual={b.multilingual}
                   />
                 ))}
               </div>
@@ -405,17 +419,11 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
 
       {/* ------------------------------------------------ Order summary */}
       <div className="lg:sticky lg:top-28 lg:self-start">
-        <OrderSummary pkg={pkg} items={summaryItems}>
+        <OrderSummary pkg={pkg} items={summaryItems} price={effectivePrice} originalPrice={effectiveOriginalPrice}>
           {mode === "closed" && notice !== CLOSED && <p className="mt-4 rounded-xl border border-gold/30 bg-cream px-4 py-3 text-sm text-ink/85">{CLOSED}</p>}
           {notice && (
             <p role="alert" className="mt-4 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
               {notice}
-            </p>
-          )}
-          {!user && !loading && (
-            <p className="mt-4 rounded-xl border border-gold/40 bg-cream p-3 text-xs text-ink/80 flex items-center gap-2">
-              <IconShield width={16} height={16} className="text-gold-dark shrink-0" />
-              <span>You will be prompted to sign in to your account before completing payment.</span>
             </p>
           )}
           <button type="button" onClick={proceed} className={`btn-primary mt-5 w-full py-4 text-base ${canPay ? "" : "opacity-60"}`} aria-disabled={!canPay || undefined}>
@@ -431,7 +439,21 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
   );
 }
 
-function OrderSummary({ pkg, items, children }: { pkg: PurchasePackage; items: { slug: string; title: string; language: string }[]; children?: React.ReactNode }) {
+function OrderSummary({
+  pkg,
+  items,
+  price,
+  originalPrice,
+  children,
+}: {
+  pkg: PurchasePackage;
+  items: { slug: string; title: string; language: string }[];
+  price?: number;
+  originalPrice?: number | null;
+  children?: React.ReactNode;
+}) {
+  const displayPrice = price ?? pkg.price;
+  const displayOriginalPrice = originalPrice !== undefined ? originalPrice : pkg.originalPrice;
   return (
     <section className="card p-6" aria-labelledby="order-summary">
       <h2 id="order-summary" className="text-2xl">Order Summary</h2>
@@ -456,12 +478,12 @@ function OrderSummary({ pkg, items, children }: { pkg: PurchasePackage; items: {
         <div className="mt-4 flex items-baseline justify-between gap-4 border-t border-line pt-4">
           <dt className="text-muted">Total</dt>
           <dd className="font-serif text-3xl">
-            <Price amount={pkg.price} originalPrice={pkg.originalPrice} currency={pkg.currency} size="sm" align="end" />
+            <Price amount={displayPrice} originalPrice={displayOriginalPrice} currency={pkg.currency} size="sm" align="end" />
           </dd>
         </div>
       </dl>
-      <ChargedInInrNote inrAmount={pkg.price} className="mt-3" />
-      {pkg.originalPrice ? <OfferCountdown className="mt-4" /> : null}
+      <ChargedInInrNote inrAmount={displayPrice} className="mt-3" />
+      {displayOriginalPrice ? <OfferCountdown className="mt-4" /> : null}
       {children}
     </section>
   );

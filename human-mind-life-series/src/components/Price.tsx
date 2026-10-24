@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { discountPercent } from "@/config/packages";
 import { useCurrency } from "@/components/currency/CurrencyContext";
 
@@ -25,29 +26,25 @@ export type PriceProps = {
  * Without a higher original price it renders only the price, exactly as before.
  * The original price is display-only; customers are always charged `amount`.
  */
-export function Price({ amount, originalPrice, priceClassName = "", className = "", size = "md", tone = "light", align = "start" }: PriceProps) {
-  const { format } = useCurrency();
+export const Price = memo(function Price({ amount, originalPrice, priceClassName = "", className = "", size = "md", tone = "light", align = "start" }: PriceProps) {
+  const { format, formatParts } = useCurrency();
   // The discount percentage is currency-invariant, so compute it on the INR amounts.
   const off = discountPercent(amount, originalPrice);
-  if (!off || !originalPrice) return <Money inrAmount={amount} className={priceClassName} />;
+  if (!off || !originalPrice) return <Money inrAmount={amount} className={priceClassName} formatParts={formatParts} />;
   return (
     <span className={`inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle ${align === "end" ? "justify-end" : ""} ${className}`}>
       <span className="sr-only">Original price </span>
       <s className={`${ORIGINAL_SIZE[size]} leading-none decoration-1 ${tone === "dark" ? "text-white/55" : "text-muted"}`}>{format(originalPrice)}</s>
       <span className="discount-badge">{off}% OFF</span>
       <span className="sr-only">, now </span>
-      <Money inrAmount={amount} className={priceClassName} />
+      <Money inrAmount={amount} className={priceClassName} formatParts={formatParts} />
     </span>
   );
-}
+});
 
-/**
- * One price with the currency symbol rendered in bold so it reads clearly on
- * every device. `symbol + amount` is exactly what `format()` returns, so the
- * figure shown (and the INR amount charged) is unchanged.
- */
-function Money({ inrAmount, className = "" }: { inrAmount: number; className?: string }) {
-  const { formatParts } = useCurrency();
+const Money = memo(function Money({ inrAmount, className = "", formatParts: passedFormatParts }: { inrAmount: number; className?: string; formatParts?: (inrAmount: number) => { symbol: string; amount: string } }) {
+  const currencyCtx = useCurrency();
+  const formatParts = passedFormatParts ?? currencyCtx.formatParts;
   const { symbol, amount } = formatParts(inrAmount);
   return (
     <span className={`font-semibold ${className}`}>
@@ -55,4 +52,4 @@ function Money({ inrAmount, className = "" }: { inrAmount: number; className?: s
       {amount}
     </span>
   );
-}
+});

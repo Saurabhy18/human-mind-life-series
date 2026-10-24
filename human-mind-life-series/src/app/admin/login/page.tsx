@@ -1,11 +1,18 @@
 import { redirect } from "next/navigation";
-import { adminConfigured, isAdmin } from "@/lib/server/auth";
+import { adminConfigured, getAuthenticatedUser, isAdmin } from "@/lib/server/auth";
 import { LoginForm } from "./LoginForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminLoginPage() {
   if (await isAdmin()) redirect("/admin");
+  
+  const user = await getAuthenticatedUser();
+  if (user) {
+    // Users with regular 'user' role cannot access admin area
+    redirect("/orders");
+  }
+
   const configured = adminConfigured();
 
   return (

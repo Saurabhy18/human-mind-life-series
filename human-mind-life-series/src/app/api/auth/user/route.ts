@@ -2,11 +2,32 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/lib/server/db";
+import { getCurrentUserRole, isLegacyAdmin } from "@/lib/server/auth";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
+    // 1. Check legacy admin session cookie
+    if (await isLegacyAdmin()) {
+      return NextResponse.json(
+        {
+          success: true,
+          authenticated: true,
+          user: {
+            id: "admin",
+            email: "admin@system.local",
+            role: "admin",
+            fullName: "Administrator",
+            createdAt: new Date().toISOString(),
+          },
+        },
+        {
+          headers: { "Cache-Control": "private, no-cache, no-store, must-revalidate" },
+        }
+      );
+    }
+
     const cookieStore = await cookies();
     const hasAuthCookie = cookieStore.getAll().some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
     if (!hasAuthCookie) {
@@ -35,6 +56,8 @@ export async function GET() {
       );
     }
 
+    const role = (await getCurrentUserRole()) || "user";
+
     let profile: { id?: string; email?: string; full_name?: string; role?: string; created_at?: string } | null = null;
     try {
       const { data } = await supabase
@@ -47,7 +70,7 @@ export async function GET() {
 
     if (!profile) {
       try {
-        profile = (getDb().prepare("SELECT id, email, full_name, role, created_at FROM profiles WHERE id = ?").get(user.id) as any) ?? null;
+        profile = (getDb().prepare("SELECT id, email, full_name, role, created_at FROM profiles WHERE id = ?").get(user.id) as { id?: string; email?: string; full_name?: string; role?: string; created_at?: string } | undefined) ?? null;
       } catch {}
     }
 
@@ -58,7 +81,7 @@ export async function GET() {
         user: {
           id: user.id,
           email: user.email,
-          role: profile?.role || "user",
+          role,
           fullName: profile?.full_name || user.user_metadata?.full_name || "",
           createdAt: profile?.created_at || user.created_at,
         },

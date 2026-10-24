@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ChevronDown, LayoutDashboard, LogOut, Package, User } from "lucide-react";
 import { IconClose, IconMenu } from "../icons";
 import { CurrencySelect } from "../currency/CurrencySelect";
@@ -16,9 +16,9 @@ const NAV = [
 
 export function Logo() {
   return (
-    <Link href="/" className="group flex flex-col leading-none" aria-label="The Human Mind & Life Series — Home">
-      <span className="font-sans text-[0.6rem] font-semibold tracking-[0.28em] text-gold-dark uppercase">The</span>
-      <span className="font-serif text-lg font-medium tracking-tight text-ink sm:text-xl">
+    <Link href="/" className="group flex flex-col leading-none min-w-0" aria-label="The Human Mind & Life Series — Home">
+      <span className="font-sans text-[0.55rem] sm:text-[0.6rem] font-semibold tracking-[0.24em] sm:tracking-[0.28em] text-gold-dark uppercase">The</span>
+      <span className="font-serif text-base font-medium tracking-tight text-ink sm:text-xl truncate">
         Human Mind <span className="text-gold">&amp;</span> Life Series
       </span>
     </Link>
@@ -84,20 +84,21 @@ function ProfileMenu({
             <p className="truncate text-sm font-semibold text-ink">{name}</p>
             {email && <p className="truncate text-xs text-muted">{email}</p>}
           </div>
-          <Link href="/profile" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
-            <User size={16} className="text-gold-dark" />
-            Profile
-          </Link>
-          <Link href="/orders" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
-            <Package size={16} className="text-gold-dark" />
-            My Orders
-          </Link>
-          {isAdmin && (
+          {isAdmin ? (
             <Link href="/admin" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
               <LayoutDashboard size={16} className="text-gold-dark" />
               Admin Panel
             </Link>
+          ) : (
+            <Link href="/orders" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+              <Package size={16} className="text-gold-dark" />
+              My Orders
+            </Link>
           )}
+          <Link href="/profile" role="menuitem" className={itemClass} onClick={() => setOpen(false)}>
+            <User size={16} className="text-gold-dark" />
+            Profile
+          </Link>
           <div className="my-1 border-t border-line" />
           <button
             type="button"
@@ -117,18 +118,29 @@ function ProfileMenu({
   );
 }
 
+const emptySubscribe = () => () => {};
+
 export function Header() {
   const pathname = usePathname();
   const { user, role, loading, signOut } = useAuth();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   // The menu remembers the page it was opened on, so it closes itself after navigation.
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn === pathname;
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const onScroll = () => setScrolled(window.scrollY > 8);
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const isScrolled = window.scrollY > 8;
+          setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -148,9 +160,9 @@ export function Header() {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded focus:bg-ink focus:px-3 focus:py-2 focus:text-white">
         Skip to content
       </a>
-      <div className="container-page flex h-16 items-center justify-between sm:h-20">
+      <div className="container-page flex h-16 items-center justify-between gap-3 sm:h-20">
         {/* Left side: Logo + Main Nav links */}
-        <div className="flex items-center gap-8 lg:gap-10">
+        <div className="flex items-center gap-4 min-w-0 sm:gap-8 lg:gap-10">
           <Logo />
           <nav aria-label="Main" className="hidden items-center gap-6 lg:gap-8 md:flex">
             {NAV.map((item) => (
@@ -205,7 +217,7 @@ export function Header() {
         </div>
 
         {/* Mobile menu button */}
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex items-center gap-1.5 shrink-0 sm:gap-2 md:hidden">
           <CurrencySelect />
           <button
           type="button"
@@ -240,7 +252,7 @@ export function Header() {
               <>
                 {user ? (
                   <>
-                    {role === "admin" && (
+                    {role === "admin" ? (
                       <li>
                         <Link
                           href="/admin"
@@ -253,6 +265,17 @@ export function Header() {
                           </span>
                         </Link>
                       </li>
+                    ) : (
+                      <li>
+                        <Link
+                          href="/orders"
+                          onClick={() => setOpenOn(null)}
+                          className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
+                        >
+                          <Package size={22} className="text-gold-dark" />
+                          <span>My Orders</span>
+                        </Link>
+                      </li>
                     )}
                     <li>
                       <Link
@@ -262,16 +285,6 @@ export function Header() {
                       >
                         <User size={22} className="text-gold-dark" />
                         <span>Profile</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/orders"
-                        onClick={() => setOpenOn(null)}
-                        className="flex items-center gap-3 border-b border-line py-4 font-serif text-2xl text-ink"
-                      >
-                        <Package size={22} className="text-gold-dark" />
-                        <span>My Orders</span>
                       </Link>
                     </li>
                     <li className="py-3">

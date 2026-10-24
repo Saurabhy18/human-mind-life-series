@@ -1,7 +1,6 @@
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
-import { CONFIG } from "@/config/site.config";
 
 /**
  * True when the UPI QR image is available either in /public or in Supabase Storage.
@@ -14,5 +13,5 @@ export function upiQrAvailable(): boolean {
       if (fs.existsSync(local) && fs.statSync(local).size > 0) return true;
     } catch {}
   }
-  return true;
+  return false;
 }

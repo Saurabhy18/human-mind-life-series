@@ -96,9 +96,9 @@ export function refundDownload(id: number): void {
   getDb().prepare("UPDATE free_requests SET download_count = MAX(download_count - 1, 0) WHERE id = ?").run(id);
 }
 
-export type FreeFilter = { status?: FreeStatus; q?: string };
+export type FreeFilter = { status?: FreeStatus; q?: string; limit?: number; offset?: number };
 
-export function listFreeRequests(filter: FreeFilter = {}): FreeRequest[] {
+export function countFilteredFreeRequests(filter: { status?: FreeStatus; q?: string } = {}): number {
   const where: string[] = [];
   const params: Record<string, string> = {};
   if (filter.status) {
@@ -109,7 +109,27 @@ export function listFreeRequests(filter: FreeFilter = {}): FreeRequest[] {
     where.push("(name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR ref LIKE @q)");
     params.q = `%${filter.q}%`;
   }
-  const sql = `SELECT * FROM free_requests ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT 500`;
+  const sql = `SELECT COUNT(*) AS total FROM free_requests ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
+  const row = getDb().prepare(sql).get(params) as { total?: number | string } | undefined;
+  return Number(row?.total || 0);
+}
+
+export function listFreeRequests(filter: FreeFilter = {}): FreeRequest[] {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  if (filter.status) {
+    where.push("status = @status");
+    params.status = filter.status;
+  }
+  if (filter.q) {
+    where.push("(name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR ref LIKE @q)");
+    params.q = `%${filter.q}%`;
+  }
+  const limit = Math.min(Math.max(Number(filter.limit) || 50, 1), 500);
+  const offset = Math.max(Number(filter.offset) || 0, 0);
+  params.limit = limit;
+  params.offset = offset;
+  const sql = `SELECT * FROM free_requests ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT @limit OFFSET @offset`;
   return getDb().prepare(sql).all(params) as FreeRequest[];
 }
 

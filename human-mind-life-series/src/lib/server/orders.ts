@@ -186,6 +186,51 @@ export function utrExists(utr: string): boolean {
   return !!getDb().prepare("SELECT 1 FROM orders WHERE utr = ? COLLATE NOCASE").get(utr);
 }
 
+/** Finds a recent, matching unpaid gateway order for the customer so multiple checkout submissions reuse the same order entry. */
+export function findPendingGatewayOrder(
+  email: string,
+  packageType: string,
+  amount: number,
+  items: { book_slug: string; target_language: string }[],
+  maxAgeMinutes = 30
+): Order | undefined {
+  if (!email) return undefined;
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM orders 
+      WHERE LOWER(email) = LOWER(?) 
+        AND payment_provider = 'cashfree' 
+        AND payment_status = 'PENDING' 
+        AND status = 'pending' 
+        AND package_type = ? 
+        AND amount = ?
+      ORDER BY id DESC LIMIT 5
+    `).all(email.trim(), packageType, amount) as Order[];
+
+    const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
+    for (const order of rows) {
+      if (order.created_at) {
+        const orderTime = new Date(order.created_at).getTime();
+        if (!Number.isNaN(orderTime) && orderTime < cutoff) continue;
+      }
+
+      const orderItems = getOrderItems(order.id);
+      if (orderItems.length !== items.length) continue;
+
+      const allMatch = items.every((expected, idx) => {
+        const actual = orderItems[idx];
+        return actual && actual.book_slug === expected.book_slug && actual.target_language === expected.target_language;
+      });
+
+      if (allMatch) return order;
+    }
+  } catch {
+    // If table/driver query fails, fall back to creating a new order safely
+  }
+  return undefined;
+}
+
 /** Creates the order and its ebooks in one transaction (an order never exists without its items). */
 export function createOrder(data: NewOrder): { id: number; ref: string } {
   const db = getDb();
@@ -226,9 +271,9 @@ export function createOrder(data: NewOrder): { id: number; ref: string } {
   })();
 }
 
-export type OrderFilter = { status?: OrderStatus; q?: string };
+export type OrderFilter = { status?: OrderStatus; q?: string; limit?: number; offset?: number };
 
-export function listOrders(filter: OrderFilter = {}): Order[] {
+export function countFilteredOrders(filter: { status?: OrderStatus; q?: string } = {}): number {
   const where: string[] = [];
   const params: Record<string, string> = {};
   if (filter.status) {
@@ -239,7 +284,27 @@ export function listOrders(filter: OrderFilter = {}): Order[] {
     where.push("(buyer_name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR utr LIKE @q OR ref LIKE @q)");
     params.q = `%${filter.q}%`;
   }
-  const sql = `SELECT * FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT 500`;
+  const sql = `SELECT COUNT(*) AS total FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
+  const row = getDb().prepare(sql).get(params) as { total?: number | string } | undefined;
+  return Number(row?.total || 0);
+}
+
+export function listOrders(filter: OrderFilter = {}): Order[] {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  if (filter.status) {
+    where.push("status = @status");
+    params.status = filter.status;
+  }
+  if (filter.q) {
+    where.push("(buyer_name LIKE @q OR email LIKE @q OR whatsapp LIKE @q OR utr LIKE @q OR ref LIKE @q)");
+    params.q = `%${filter.q}%`;
+  }
+  const limit = Math.min(Math.max(Number(filter.limit) || 50, 1), 500);
+  const offset = Math.max(Number(filter.offset) || 0, 0);
+  params.limit = limit;
+  params.offset = offset;
+  const sql = `SELECT * FROM orders ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY id DESC LIMIT @limit OFFSET @offset`;
   return getDb().prepare(sql).all(params) as Order[];
 }
 

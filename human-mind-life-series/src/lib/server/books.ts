@@ -93,30 +93,30 @@ function parseJsonObject<T>(val: unknown, fallback: T | null = null): T | null {
   return fallback;
 }
 
-function normalizeDbBook(row: any): DbBook {
+function normalizeDbBook(row: Record<string, unknown>): DbBook {
   return {
     id: Number(row.id),
     slug: String(row.slug),
     title: String(row.title),
     author: String(row.author || ""),
     volume: row.volume != null ? Number(row.volume) : null,
-    tagline: row.tagline || null,
-    short_description: row.short_description || null,
-    description: row.description || null,
+    tagline: row.tagline ? String(row.tagline) : null,
+    short_description: row.short_description ? String(row.short_description) : null,
+    description: row.description ? String(row.description) : null,
     price: Number(row.price || 0),
     original_price: row.original_price != null ? Number(row.original_price) : null,
     currency: String(row.currency || "INR"),
     is_free: Boolean(row.is_free),
     for_sale: Boolean(row.for_sale),
     pdf_filename: String(row.pdf_filename),
-    cover_image: row.cover_image || null,
+    cover_image: row.cover_image ? String(row.cover_image) : null,
     source_language: String(row.source_language || "en"),
     learn: parseJsonArray<string>(row.learn),
     topics: parseJsonArray<string>(row.topics),
     toc: parseJsonArray<string>(row.toc),
     faqs: parseJsonArray<{ q: string; a: string }>(row.faqs),
     sample: parseJsonObject<{ heading: string; paragraphs: string[] }>(row.sample),
-    disclaimer: row.disclaimer || null,
+    disclaimer: row.disclaimer ? String(row.disclaimer) : null,
     hide_volume_label: Boolean(row.hide_volume_label),
     adults_only: Boolean(row.adults_only),
     cover_bg: String(row.cover_bg || "#13233f"),
@@ -146,14 +146,15 @@ export function listDbBooks(): DbBook[] {
   try {
     const rows = getDb()
       .prepare("SELECT * FROM books ORDER BY volume ASC NULLS LAST, id ASC")
-      .all() as any[];
+      .all() as Record<string, unknown>[];
     const books = rows.map(normalizeDbBook);
-    if (books.length > 0) {
-      cachedDbBooks = { at: Date.now(), books };
-    }
+    cachedDbBooks = { at: Date.now(), books };
     return books;
   } catch (err) {
     console.error("listDbBooks query error:", err);
+    if (!cachedDbBooks) {
+      cachedDbBooks = { at: Date.now() - BOOKS_CACHE_TTL + 10_000, books: [] };
+    }
     return cachedDbBooks?.books ?? [];
   }
 }
@@ -163,12 +164,13 @@ export function listDbBooks(): DbBook[] {
  */
 export function getDbBookBySlug(slug: string): DbBook | undefined {
   const books = listDbBooks();
-  if (books.length > 0) {
-    const found = books.find((b) => b.slug === slug);
-    if (found) return found;
+  const found = books.find((b) => b.slug === slug);
+  if (found) return found;
+  if (cachedDbBooks && cachedDbBooks.books.length > 0) {
+    return undefined;
   }
   try {
-    const row = getDb().prepare("SELECT * FROM books WHERE slug = ?").get(slug) as any;
+    const row = getDb().prepare("SELECT * FROM books WHERE slug = ?").get(slug) as Record<string, unknown> | undefined;
     return row ? normalizeDbBook(row) : undefined;
   } catch (err) {
     console.error("getDbBookBySlug error:", err);
@@ -181,12 +183,13 @@ export function getDbBookBySlug(slug: string): DbBook | undefined {
  */
 export function getDbBookById(id: number): DbBook | undefined {
   const books = listDbBooks();
-  if (books.length > 0) {
-    const found = books.find((b) => b.id === id);
-    if (found) return found;
+  const found = books.find((b) => b.id === id);
+  if (found) return found;
+  if (cachedDbBooks && cachedDbBooks.books.length > 0) {
+    return undefined;
   }
   try {
-    const row = getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as any;
+    const row = getDb().prepare("SELECT * FROM books WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? normalizeDbBook(row) : undefined;
   } catch (err) {
     console.error("getDbBookById error:", err);
@@ -228,9 +231,9 @@ export async function uploadBookPdfToStorage(
 
     clearBookSourceCache();
     return { ok: true, path: filename };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[uploadBookPdfToStorage] Unexpected error:", err);
-    return { ok: false, error: err?.message || "PDF upload failed" };
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)) || "PDF upload failed" };
   }
 }
 

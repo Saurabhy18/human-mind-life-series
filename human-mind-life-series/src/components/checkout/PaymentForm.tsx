@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
 import { getAttribution } from "@/lib/tracking-params";
 import { useAuth } from "@/components/auth/AuthContext";
@@ -18,9 +18,14 @@ type Errors = Record<string, string>;
  */
 export function PaymentForm({ selection, amount, summary, upiId }: { selection: PurchaseSelection; amount: number; summary: string; upiId: string }) {
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const [buyerName, setBuyerName] = useState("");
-  const [email, setEmail] = useState("");
+  const { user } = useAuth();
+  const [manualName, setManualName] = useState<string | null>(null);
+  const [manualEmail, setManualEmail] = useState<string | null>(null);
+  const defaultName = user ? (user.fullName || (user.email ? user.email.split("@")[0] : "")) : "";
+  const defaultEmail = user?.email || "";
+  const buyerName = manualName !== null ? manualName : defaultName;
+  const email = manualEmail !== null ? manualEmail : defaultEmail;
+
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -28,68 +33,6 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const price = formatMoney(amount, "INR");
-
-  useEffect(() => {
-    if (user) {
-      if (!buyerName) {
-        setBuyerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
-      }
-      if (!email && user.email) {
-        setEmail(user.email);
-      }
-    }
-  }, [user, buyerName, email]);
-
-  if (loading) {
-    return (
-      <div className="card p-8 text-center text-muted">
-        <p className="animate-pulse">Checking account status...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    const nextUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout";
-    const saveAndRedirect = (url: string) => {
-      try {
-        sessionStorage.setItem("hm:pending-checkout", JSON.stringify(selection));
-      } catch {}
-      router.push(url);
-    };
-
-    return (
-      <div className="rounded-2xl border border-gold/40 bg-cream/70 p-6 sm:p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gold/15 text-gold-dark mb-4">
-          <IconShield width={24} height={24} />
-        </div>
-        <h3 className="text-xl font-serif text-ink">Sign in to complete your purchase</h3>
-        <p className="mt-2 text-sm text-muted max-w-md mx-auto">
-          You must be logged in to submit payment details and place your order. Your ebooks will be linked to your personal account library.
-        </p>
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => saveAndRedirect(`/login?next=${encodeURIComponent(nextUrl)}`)}
-            className="btn-primary w-full sm:w-auto px-6 py-2.5 text-center"
-          >
-            Sign In to Continue
-          </button>
-          <button
-            type="button"
-            onClick={() => saveAndRedirect(`/signup?next=${encodeURIComponent(nextUrl)}`)}
-            className="btn-outline w-full sm:w-auto px-6 py-2.5 text-center"
-          >
-            Create an Account
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-
-  useEffect(() => () => {
-    if (preview) URL.revokeObjectURL(preview);
-  }, [preview]);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -123,6 +66,7 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
     const data = new FormData(form);
     if (!data.get("buyerName") && buyerName) data.set("buyerName", buyerName.trim());
     if (!data.get("email") && email) data.set("email", email.trim().toLowerCase());
+    data.set("amountPaid", String(amount));
 
     const file = fileRef.current?.files?.[0];
     if (!file) {
@@ -172,14 +116,24 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
         </label>
       </div>
 
-      {user && (
-        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
-          <p>
+      {user ? (
+        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 break-words">
             Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
           </p>
-          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
+          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark shrink-0">
             Logged In
           </span>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex flex-wrap items-center justify-between gap-2">
+          <p className="text-ink/80 font-medium">Guest Checkout (No account required)</p>
+          <a
+            href={`/login?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout")}`}
+            className="text-gold-dark font-medium hover:underline text-xs shrink-0"
+          >
+            Sign in
+          </a>
         </div>
       )}
 
@@ -191,8 +145,9 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
             name="buyerName"
             className="input"
             autoComplete="name"
+            placeholder="Your full name"
             value={buyerName}
-            onChange={(e) => setBuyerName(e.target.value)}
+            onChange={(e) => setManualName(e.target.value)}
             required
             maxLength={80}
             {...aria("buyerName")}
@@ -200,21 +155,22 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
           {err("buyerName")}
         </div>
         <div>
-          <label htmlFor="email" className="label">Account Email</label>
+          <label htmlFor="email" className="label">Email Address *</label>
           <input
             id="email"
             name="email"
             type="email"
-            className="input bg-cream/40 cursor-not-allowed font-medium text-ink/80"
+            className="input"
             autoComplete="email"
             inputMode="email"
+            placeholder="your.email@example.com"
             value={email}
-            readOnly
+            onChange={(e) => setManualEmail(e.target.value)}
             required
             maxLength={120}
             {...aria("email")}
           />
-          <p className="mt-1 text-xs text-muted">Your order and library access will be linked to this account email.</p>
+          <p className="mt-1 text-xs text-muted">Your order receipt and ebook downloads will be sent to this email.</p>
           {err("email")}
         </div>
         <div className="sm:col-span-2">
@@ -224,22 +180,22 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
         </div>
       </div>
 
-
       <div>
         <label htmlFor="amountPaid" className="label">Amount Paid (₹) *</label>
         <input
           key={amount}
           id="amountPaid"
           name="amountPaid"
-          className="input"
+          className="input bg-neutral-100/70 font-semibold cursor-not-allowed select-none text-ink"
           inputMode="decimal"
           autoComplete="off"
-          defaultValue={String(amount)}
+          value={String(amount)}
+          readOnly
           required
           maxLength={10}
           {...aria("amountPaid")}
         />
-        <p className="mt-1.5 text-xs text-muted">Enter the exact amount shown in your UPI app for this payment.</p>
+        <p className="mt-1.5 text-xs text-muted">Fixed price: your payment must be exactly ₹{amount} for this order.</p>
         {err("amountPaid")}
       </div>
 

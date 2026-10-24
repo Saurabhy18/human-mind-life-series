@@ -51,42 +51,46 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (isSupportedCurrency(saved)) setCurrencyState(saved);
-    } catch {
-      // localStorage may be unavailable (private mode) — ignore and stay on base.
-    }
-
-    let hasFreshRates = false;
-    try {
-      const cached = localStorage.getItem(RATES_CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached) as { at: number; rates: Rates };
-        if (parsed?.rates && Date.now() - parsed.at < RATES_CACHE_MAX_AGE) {
-          setRates({ [BASE_CURRENCY]: 1, ...parsed.rates });
-          setReady(true);
-          hasFreshRates = true;
-        }
-      }
-    } catch {}
-
-    if (hasFreshRates) return;
-
     let cancelled = false;
-    fetch("/api/exchange-rates")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { rates?: Rates } | null) => {
-        if (cancelled || !data?.rates) return;
-        setRates({ [BASE_CURRENCY]: 1, ...data.rates });
-        try {
-          localStorage.setItem(RATES_CACHE_KEY, JSON.stringify({ at: Date.now(), rates: data.rates }));
-        } catch {}
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setReady(true);
-      });
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (isSupportedCurrency(saved)) setCurrencyState(saved);
+      } catch {
+        // localStorage may be unavailable (private mode) — ignore and stay on base.
+      }
+
+      let hasFreshRates = false;
+      try {
+        const cached = localStorage.getItem(RATES_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as { at: number; rates: Rates };
+          if (parsed?.rates && Date.now() - parsed.at < RATES_CACHE_MAX_AGE) {
+            setRates({ [BASE_CURRENCY]: 1, ...parsed.rates });
+            setReady(true);
+            hasFreshRates = true;
+          }
+        }
+      } catch {}
+
+      if (hasFreshRates) return;
+
+      fetch("/api/exchange-rates")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { rates?: Rates } | null) => {
+          if (cancelled || !data?.rates) return;
+          setRates({ [BASE_CURRENCY]: 1, ...data.rates });
+          try {
+            localStorage.setItem(RATES_CACHE_KEY, JSON.stringify({ at: Date.now(), rates: data.rates }));
+          } catch {}
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setReady(true);
+        });
+    });
+
     return () => {
       cancelled = true;
     };
@@ -101,16 +105,25 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const format = useCallback(
+    (inrAmount: number) => formatInCurrency(inrAmount, currency, rates),
+    [currency, rates]
+  );
+  const formatParts = useCallback(
+    (inrAmount: number) => formatInCurrencyParts(inrAmount, currency, rates),
+    [currency, rates]
+  );
+
   const value = useMemo<CurrencyContextValue>(
     () => ({
       currency,
       setCurrency,
       rates,
       ready,
-      format: (inrAmount: number) => formatInCurrency(inrAmount, currency, rates),
-      formatParts: (inrAmount: number) => formatInCurrencyParts(inrAmount, currency, rates),
+      format,
+      formatParts,
     }),
-    [currency, setCurrency, rates, ready],
+    [currency, setCurrency, rates, ready, format, formatParts],
   );
 
   return <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>;
