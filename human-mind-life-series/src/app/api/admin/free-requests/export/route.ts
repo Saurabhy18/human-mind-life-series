@@ -1,4 +1,4 @@
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { listFreeRequests } from "@/lib/server/free-requests";
 import { FREE_STATUS_LABELS } from "@/lib/free-status";
 import { csvCell } from "@/lib/text";
@@ -6,7 +6,8 @@ import { csvCell } from "@/lib/text";
 export const runtime = "nodejs";
 
 export async function GET() {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
 
   const header = ["Request Ref", "Request Date (UTC)", "Name", "Email", "WhatsApp", "Book", "Author", "Delivery Status", "Link Downloads", "Note", "Source"];
   const rows = listFreeRequests().map((r) => {

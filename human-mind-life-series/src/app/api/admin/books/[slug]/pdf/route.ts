@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isAdmin } from "@/lib/server/auth";
+import { verifyAdminApi } from "@/lib/server/auth";
 import { PRIVATE_BOOKS_DIR } from "@/lib/server/db";
 import { FREE_BOOKS, getAllProducts } from "@/lib/products";
 import { ensureBookSource, getBookSource } from "@/lib/server/translation/bookSource";
@@ -13,7 +13,8 @@ export const runtime = "nodejs";
  * to an email or WhatsApp message. Never publicly accessible.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
-  if (!(await isAdmin())) return new Response("Unauthorized", { status: 401 });
+  const authError = await verifyAdminApi();
+  if (authError) return authError;
 
   const { slug } = await params;
   // Slugs from static catalogue or database are accepted

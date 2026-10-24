@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Cashfree } from "@cashfreepayments/cashfree-js";
 import { formatMoney, type PurchaseSelection } from "@/config/packages";
@@ -22,104 +22,73 @@ type Checkout = { provider: "cashfree"; mode: "sandbox" | "production"; paymentS
  */
 export function GatewayCheckout({ selection, amount, currency }: { selection: PurchaseSelection; amount: number; currency: string }) {
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
+  const { user } = useAuth();
+  const [manualName, setManualName] = useState<string | null>(null);
+  const [manualEmail, setManualEmail] = useState<string | null>(null);
+  const defaultName = user ? (user.fullName || (user.email ? user.email.split("@")[0] : "")) : "";
+  const defaultEmail = user?.email || "";
+  const customerName = manualName !== null ? manualName : defaultName;
+  const customerEmail = manualEmail !== null ? manualEmail : defaultEmail;
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      if (!customerName) {
-        setCustomerName(user.fullName || (user.email ? user.email.split("@")[0] : ""));
-      }
-      if (!customerEmail && user.email) {
-        setCustomerEmail(user.email);
-      }
-    }
-  }, [user, customerName, customerEmail]);
-
-  if (loading) {
-    return (
-      <div className="card p-8 text-center text-muted">
-        <p className="animate-pulse">Checking account status...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    const nextUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout";
-    const saveAndRedirect = (url: string) => {
-      try {
-        sessionStorage.setItem("hm:pending-checkout", JSON.stringify(selection));
-      } catch {}
-      router.push(url);
-    };
-
-    return (
-      <div className="rounded-2xl border border-gold/40 bg-cream/70 p-6 sm:p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gold/15 text-gold-dark mb-4">
-          <IconShield width={24} height={24} />
-        </div>
-        <h3 className="text-xl font-serif text-ink">Sign in to complete your purchase</h3>
-        <p className="mt-2 text-sm text-muted max-w-md mx-auto">
-          You must be logged in to place an order. Your ebooks will be immediately linked to your account and accessible from My Orders anytime.
-        </p>
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => saveAndRedirect(`/login?next=${encodeURIComponent(nextUrl)}`)}
-            className="btn-primary w-full sm:w-auto px-6 py-2.5 text-center"
-          >
-            Sign In to Continue
-          </button>
-          <button
-            type="button"
-            onClick={() => saveAndRedirect(`/signup?next=${encodeURIComponent(nextUrl)}`)}
-            className="btn-outline w-full sm:w-auto px-6 py-2.5 text-center"
-          >
-            Create an Account
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const [activeOrder, setActiveOrder] = useState<{ orderId: string; accessToken: string; selectionKey: string } | null>(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setMessage("");
     const f = new FormData(e.currentTarget);
     const finalName = (customerName || String(f.get("customerName") || "")).trim();
     const finalEmail = (customerEmail || String(f.get("customerEmail") || "")).trim().toLowerCase();
     const consentGiven = f.get("consent") === "on" || f.get("consent") === "true";
 
+    if (!finalName) {
+      setErrors({ customerName: "Please enter your name." });
+      return;
+    }
+    if (!finalEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(finalEmail)) {
+      setErrors({ customerEmail: "Please enter a valid email address." });
+      return;
+    }
+
+    const selectionKey = JSON.stringify({ p: selection.packageId, i: selection.items });
+    let orderId = activeOrder?.selectionKey === selectionKey ? activeOrder.orderId : null;
+    let accessToken = activeOrder?.selectionKey === selectionKey ? activeOrder.accessToken : null;
+
     setBusy(true);
     try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          packageId: selection.packageId,
-          items: selection.items,
-          customerName: finalName,
-          customerEmail: finalEmail,
-          consent: consentGiven,
-          website: String(f.get("website") || ""),
-          tracking: getAttribution() ?? {},
-        }),
-      });
-      const order = (await res.json()) as { success?: boolean; orderId?: string; accessToken?: string; message?: string; errors?: Record<string, string> };
-      if (!res.ok || !order.success || !order.orderId || !order.accessToken) {
-        setErrors(order.errors ?? {});
-        setMessage(order.message ?? "Something went wrong. Please try again.");
-        return;
+      if (!orderId || !accessToken) {
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            packageId: selection.packageId,
+            items: selection.items,
+            customerName: finalName,
+            customerEmail: finalEmail,
+            consent: consentGiven,
+            website: String(f.get("website") || ""),
+            tracking: getAttribution() ?? {},
+          }),
+        });
+        const order = (await res.json()) as { success?: boolean; orderId?: string; accessToken?: string; message?: string; errors?: Record<string, string> };
+        if (!res.ok || !order.success || !order.orderId || !order.accessToken) {
+          setErrors(order.errors ?? {});
+          setMessage(order.message ?? "Something went wrong. Please try again.");
+          return;
+        }
+        orderId = order.orderId;
+        accessToken = order.accessToken;
+        setActiveOrder({ orderId, accessToken, selectionKey });
       }
-      setErrors({});
-      const headers = { "Content-Type": "application/json", "x-order-token": order.accessToken };
-      const statusPage = `/order/status/${order.orderId}#t=${order.accessToken}`;
 
-      const pay = await fetch("/api/payment/create", { method: "POST", headers, body: JSON.stringify({ orderId: order.orderId }) });
+      setErrors({});
+      const headers = { "Content-Type": "application/json", "x-order-token": accessToken };
+      const statusPage = `/order/status/${orderId}#t=${accessToken}`;
+
+      const pay = await fetch("/api/payment/create", { method: "POST", headers, body: JSON.stringify({ orderId }) });
       const payJson = (await pay.json()) as { success?: boolean; checkout?: Checkout; message?: string };
       if (!pay.ok || !payJson.checkout) {
         setMessage(payJson.message ?? "We could not start the payment.");
@@ -128,7 +97,7 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
       const c = payJson.checkout;
       // Keep the access token so the status page can recover it after the redirect back from Cashfree.
       try {
-        sessionStorage.setItem(orderTokenKey(order.orderId), order.accessToken);
+        sessionStorage.setItem(orderTokenKey(orderId), accessToken);
       } catch {
         /* private mode / storage blocked — the #t= fragment still covers the common case */
       }
@@ -139,9 +108,10 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         const { load } = await import("@cashfreepayments/cashfree-js");
         cashfree = await Promise.race([
           load({ mode: c.mode }),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("sdk-load-timeout")), 15000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("sdk-load-timeout")), 25000)),
         ]);
-      } catch {
+      } catch (err) {
+        console.error("Cashfree SDK failed to load mode:", c.mode, err);
         setMessage("We couldn't load the secure payment window. Check your connection (and disable any ad/tracker blocker for this site), then try again.");
         return;
       }
@@ -179,7 +149,7 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
-      {user && (
+      {user ? (
         <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
           <p>
             Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
@@ -187,6 +157,16 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
           <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
             Logged In
           </span>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex items-center justify-between">
+          <p className="text-ink/80 font-medium">Guest Checkout (No account required)</p>
+          <a
+            href={`/login?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout")}`}
+            className="text-gold-dark font-medium hover:underline text-xs"
+          >
+            Sign in
+          </a>
         </div>
       )}
 
@@ -196,33 +176,35 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
         </label>
       </div>
       <div>
-        <label htmlFor="gw-name" className="label">Name *</label>
+        <label htmlFor="gw-name" className="label">Full Name *</label>
         <input
           id="gw-name"
           name="customerName"
           className="input"
           autoComplete="name"
+          placeholder="Your full name"
           value={customerName}
-          onChange={(e) => setCustomerName(e.target.value)}
+          onChange={(e) => setManualName(e.target.value)}
           required
           maxLength={80}
         />
         {errors.customerName && <p className="mt-1.5 text-sm text-danger">{errors.customerName}</p>}
       </div>
       <div>
-        <label htmlFor="gw-email" className="label">Account Email</label>
+        <label htmlFor="gw-email" className="label">Email Address *</label>
         <input
           id="gw-email"
           name="customerEmail"
           type="email"
-          className="input bg-cream/40 cursor-not-allowed font-medium text-ink/80"
+          className="input"
           autoComplete="email"
+          placeholder="your.email@example.com"
           value={customerEmail}
-          readOnly
+          onChange={(e) => setManualEmail(e.target.value)}
           required
           maxLength={120}
         />
-        <p className="mt-1 text-xs text-muted">Your order and library access will be linked to this account email.</p>
+        <p className="mt-1 text-xs text-muted">Your order confirmation, receipt and secure ebook downloads will be sent to this email.</p>
         {errors.customerEmail && <p className="mt-1.5 text-sm text-danger">{errors.customerEmail}</p>}
       </div>
 

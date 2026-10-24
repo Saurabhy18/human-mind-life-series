@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { SignJWT } from "jose";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -201,7 +200,7 @@ describe("Database backup", () => {
     const text = await res.text();
     const snapshot = JSON.parse(text);
     expect(Array.isArray(snapshot.orders)).toBe(true);
-    expect(snapshot.orders.some((row: any) => row.ref === o.ref)).toBe(true);
+    expect(snapshot.orders.some((row: { ref?: string }) => row.ref === o.ref)).toBe(true);
   });
 });
 
@@ -238,4 +237,3 @@ describe("Production configuration", () => {
     expect((await import("@/config/site.config")).SITE_URL_IS_PLACEHOLDER).toBe(true);
   });
 });
-

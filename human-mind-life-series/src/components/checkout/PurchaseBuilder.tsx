@@ -22,6 +22,7 @@ export type CheckoutBook = {
   /** False when the book's PDF is not on the server (or is unreadable): it cannot be ordered yet. */
   deliverable: boolean;
   free?: boolean;
+  multilingual?: boolean;
 };
 
 type Props = {
@@ -76,20 +77,22 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
     try {
       const saved = sessionStorage.getItem("hm:pending-checkout");
       if (saved) {
-        const parsed = JSON.parse(saved) as PurchaseSelection;
-        if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
-          setPackageId(parsed.packageId);
-        }
-        if (parsed.items?.length) {
-          const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
-          if (itemSlugs.length > 0) setPicked(itemSlugs);
-          const langMap: Record<string, string> = {};
-          parsed.items.forEach((i) => {
-            if (i.language) langMap[i.bookId] = i.language;
-          });
-          setLangs((prev) => ({ ...prev, ...langMap }));
-        }
         sessionStorage.removeItem("hm:pending-checkout");
+        const parsed = JSON.parse(saved) as PurchaseSelection;
+        queueMicrotask(() => {
+          if (parsed.packageId && packages.some((p) => p.id === parsed.packageId)) {
+            setPackageId(parsed.packageId);
+          }
+          if (parsed.items?.length) {
+            const itemSlugs = parsed.items.map((i) => i.bookId).filter((slug) => books.some((b) => b.slug === slug && b.deliverable));
+            if (itemSlugs.length > 0) setPicked(itemSlugs);
+            const langMap: Record<string, string> = {};
+            parsed.items.forEach((i) => {
+              if (i.language) langMap[i.bookId] = i.language;
+            });
+            setLangs((prev) => ({ ...prev, ...langMap }));
+          }
+        });
       }
     } catch {}
   }, [books, packages]);
@@ -394,6 +397,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                     name={`language-${b.slug}`}
                     label={selected.length > 1 ? `${b.volumeLabel ?? b.title} — language` : undefined}
                     hint={false}
+                    isMultilingual={b.multilingual}
                   />
                 ))}
               </div>
@@ -410,12 +414,6 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
           {notice && (
             <p role="alert" className="mt-4 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
               {notice}
-            </p>
-          )}
-          {!user && !loading && (
-            <p className="mt-4 rounded-xl border border-gold/40 bg-cream p-3 text-xs text-ink/80 flex items-center gap-2">
-              <IconShield width={16} height={16} className="text-gold-dark shrink-0" />
-              <span>You will be prompted to sign in to your account before completing payment.</span>
             </p>
           )}
           <button type="button" onClick={proceed} className={`btn-primary mt-5 w-full py-4 text-base ${canPay ? "" : "opacity-60"}`} aria-disabled={!canPay || undefined}>

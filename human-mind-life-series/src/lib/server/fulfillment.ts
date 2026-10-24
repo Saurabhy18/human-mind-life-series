@@ -9,7 +9,8 @@ import { logger, errorMessage } from "./logger";
 import { getOrder, getOrderByRef, getOrderItems, type FulfillmentStatus, type Order, type OrderItem } from "./orders";
 import { getStorage } from "./storageService";
 import { bookReadyEmail, paymentReceivedEmail, sendEmail, type EmailBook } from "./emailService";
-import { getBookSource, translationCacheKey } from "./translation/bookSource";
+import { ensureBookSource, getBookSource, isBookSourceAvailable, translationCacheKey } from "./translation/bookSource";
+import { getBookFromDbOrStatic } from "./books";
 import { getAvailableLanguages } from "./translation/languages";
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
@@ -146,7 +147,8 @@ export async function startFulfillment(orderId: number, opts: { retryFailed?: bo
 /** Starts delivery of one ebook. Returns true when a translation had to be queued (i.e. it is not ready yet). */
 async function startItem(order: Order, item: OrderItem): Promise<boolean> {
   const db = getDb();
-  const book = getBook(item.book_slug);
+  await ensureBookSource(item.book_slug);
+  const book = getBookFromDbOrStatic(item.book_slug) ?? getBook(item.book_slug);
   const source = book ? getBookSource(book) : null;
   if (!book || !source) {
     // No private source file: delivered manually by the admin, as before.
@@ -347,8 +349,9 @@ export type CustomerItemStatus = {
 };
 
 function itemStage(order: Order, item: OrderItem): { stage: CustomerStage; progress: number } {
-  if (order.payment_status === "FAILED") return { stage: "PAYMENT_FAILED", progress: 0 };
-  if (order.payment_status !== "PAID") return { stage: "PAYMENT_PENDING", progress: 0 };
+  if (order.payment_status === "FAILED" || order.status === "rejected") return { stage: "PAYMENT_FAILED", progress: 0 };
+  const isPaid = order.payment_status === "PAID" || order.status === "verified" || order.status === "delivered";
+  if (!isPaid) return { stage: "PAYMENT_PENDING", progress: 0 };
   switch (item.fulfillment_status) {
     case "COMPLETED":
       return { stage: item.access_expires_at && utc(item.access_expires_at) < new Date() ? "EXPIRED" : "READY", progress: 100 };
@@ -363,7 +366,7 @@ function itemStage(order: Order, item: OrderItem): { stage: CustomerStage; progr
       return { stage, progress: job?.progress ?? 0 };
     }
     default:
-      return { stage: getBookSource(item.book_slug) ? "PAYMENT_SUCCESSFUL" : "MANUAL_DELIVERY", progress: 0 };
+      return { stage: isBookSourceAvailable(item.book_slug) ? "PAYMENT_SUCCESSFUL" : "MANUAL_DELIVERY", progress: 0 };
   }
 }
 
@@ -396,6 +399,8 @@ export async function customerStatus(order: Order) {
   const first = items[0];
   return {
     orderId: order.ref,
+    orderStatus: order.status,
+    paymentProvider: order.payment_provider,
     packageType: order.package_type,
     packageName: getPackage(order.package_type)?.name ?? order.product_title,
     amount: order.amount,

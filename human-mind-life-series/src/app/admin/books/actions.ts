@@ -115,9 +115,9 @@ export async function createBookAction(
       cover_accent: coverAccent,
       disclaimer: disclaimer || null,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to create book:", err);
-    return { ok: false, error: err?.message || "Failed to save book to database." };
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)) || "Failed to save book to database." };
   }
 
   revalidatePath("/admin/books");
@@ -212,9 +212,9 @@ export async function updateBookAction(
       cover_accent: coverAccent,
       disclaimer: disclaimer || null,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to update book:", err);
-    return { ok: false, error: err?.message || "Failed to update book in database." };
+    return { ok: false, error: (err instanceof Error ? err.message : String(err)) || "Failed to update book in database." };
   }
 
   revalidatePath("/admin/books");

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { requireAccount, getUserOrders } from "@/lib/server/account";
 import { issueAccessToken } from "@/lib/server/fulfillment";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "My Orders",
   description: "Track your Human Mind & Life Series orders and access your ebooks.",

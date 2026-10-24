@@ -67,6 +67,7 @@ export function LanguageSelector({
   error,
   label,
   hint = true,
+  isMultilingual: isMultilingualProp,
 }: {
   bookSlug: string;
   value: string;
@@ -74,21 +75,24 @@ export function LanguageSelector({
   name?: string;
   tone?: "light" | "dark";
   error?: string;
-  /** Visible label (e.g. "Language for Volume 3" when several books are chosen). */
   label?: string;
-  /** Show the "machine-translated" note under the dropdown. */
   hint?: boolean;
+  isMultilingual?: boolean;
 }) {
   const id = useId();
   const [list, setList] = useState<LanguageList | null>(null);
   const languages = list?.languages ?? null;
   // Remembered per book, so switching book shows "loading" again without resetting state inside an effect.
-  const [info, setInfo] = useState<{ slug: string; multilingual: boolean } | null>(null);
-  const multilingual = info?.slug === bookSlug ? info.multilingual : null;
+  const [info, setInfo] = useState<{ slug: string; multilingual: boolean } | null>(() => isMultilingualProp !== undefined ? { slug: bookSlug, multilingual: isMultilingualProp } : null);
+  const multilingual = info?.slug === bookSlug ? info.multilingual : (isMultilingualProp ?? null);
 
   useEffect(() => {
     let alive = true;
-    isMultilingual(bookSlug).then(async (m) => {
+    const checkMultilingual = isMultilingualProp !== undefined
+      ? Promise.resolve(isMultilingualProp)
+      : isMultilingual(bookSlug);
+
+    checkMultilingual.then(async (m) => {
       if (!alive) return;
       setInfo({ slug: bookSlug, multilingual: m });
       if (!m) {
@@ -104,7 +108,7 @@ export function LanguageSelector({
     return () => {
       alive = false;
     };
-  }, [bookSlug]); // eslint-disable-line react-hooks/exhaustive-deps -- only re-check when the book changes
+  }, [bookSlug, isMultilingualProp]); // eslint-disable-line react-hooks/exhaustive-deps -- only re-check when the book changes
 
   const dark = tone === "dark";
   if (multilingual === false) {
