@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "./AuthContext";
 
 export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
+  const { refresh: refreshAuth } = useAuth();
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -65,8 +67,11 @@ export function SignupForm() {
       // If session is already created, sign in and route to destination
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.signInWithPassword({ email, password });
-      router.push(next);
+      // Update the auth context before navigating so the header shows the new
+      // account immediately rather than only after a full page load.
+      await refreshAuth();
       router.refresh();
+      router.push(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
