@@ -18,7 +18,7 @@ export default async function OrdersPage() {
     <div className="py-12 sm:py-20">
       <div className="container-page max-w-4xl">
         <div className="card p-6 sm:p-8">
-          <div className="flex items-center justify-between mb-6 border-b border-line pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6 border-b border-line pb-4">
             <div>
               <span className="eyebrow">My Account</span>
               <h1 className="font-serif text-3xl font-medium text-ink">My Orders &amp; Ebooks</h1>

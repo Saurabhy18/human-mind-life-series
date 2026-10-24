@@ -36,6 +36,7 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
+    overflow-x: hidden;
     background: var(--color-paper);
     color: var(--color-ink);
     font-family: var(--font-sans);

@@ -66,6 +66,7 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
     const data = new FormData(form);
     if (!data.get("buyerName") && buyerName) data.set("buyerName", buyerName.trim());
     if (!data.get("email") && email) data.set("email", email.trim().toLowerCase());
+    data.set("amountPaid", String(amount));
 
     const file = fileRef.current?.files?.[0];
     if (!file) {
@@ -116,20 +117,20 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
       </div>
 
       {user ? (
-        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
-          <p>
+        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 break-words">
             Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
           </p>
-          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
+          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark shrink-0">
             Logged In
           </span>
         </div>
       ) : (
-        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex items-center justify-between">
+        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex flex-wrap items-center justify-between gap-2">
           <p className="text-ink/80 font-medium">Guest Checkout (No account required)</p>
           <a
             href={`/login?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout")}`}
-            className="text-gold-dark font-medium hover:underline text-xs"
+            className="text-gold-dark font-medium hover:underline text-xs shrink-0"
           >
             Sign in
           </a>
@@ -185,15 +186,16 @@ export function PaymentForm({ selection, amount, summary, upiId }: { selection: 
           key={amount}
           id="amountPaid"
           name="amountPaid"
-          className="input"
+          className="input bg-neutral-100/70 font-semibold cursor-not-allowed select-none text-ink"
           inputMode="decimal"
           autoComplete="off"
-          defaultValue={String(amount)}
+          value={String(amount)}
+          readOnly
           required
           maxLength={10}
           {...aria("amountPaid")}
         />
-        <p className="mt-1.5 text-xs text-muted">Enter the exact amount shown in your UPI app for this payment.</p>
+        <p className="mt-1.5 text-xs text-muted">Fixed price: your payment must be exactly ₹{amount} for this order.</p>
         {err("amountPaid")}
       </div>
 

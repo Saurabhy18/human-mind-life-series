@@ -16,9 +16,9 @@ const NAV = [
 
 export function Logo() {
   return (
-    <Link href="/" className="group flex flex-col leading-none" aria-label="The Human Mind & Life Series — Home">
-      <span className="font-sans text-[0.6rem] font-semibold tracking-[0.28em] text-gold-dark uppercase">The</span>
-      <span className="font-serif text-lg font-medium tracking-tight text-ink sm:text-xl">
+    <Link href="/" className="group flex flex-col leading-none min-w-0" aria-label="The Human Mind & Life Series — Home">
+      <span className="font-sans text-[0.55rem] sm:text-[0.6rem] font-semibold tracking-[0.24em] sm:tracking-[0.28em] text-gold-dark uppercase">The</span>
+      <span className="font-serif text-base font-medium tracking-tight text-ink sm:text-xl truncate">
         Human Mind <span className="text-gold">&amp;</span> Life Series
       </span>
     </Link>
@@ -160,9 +160,9 @@ export function Header() {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded focus:bg-ink focus:px-3 focus:py-2 focus:text-white">
         Skip to content
       </a>
-      <div className="container-page flex h-16 items-center justify-between sm:h-20">
+      <div className="container-page flex h-16 items-center justify-between gap-3 sm:h-20">
         {/* Left side: Logo + Main Nav links */}
-        <div className="flex items-center gap-8 lg:gap-10">
+        <div className="flex items-center gap-4 min-w-0 sm:gap-8 lg:gap-10">
           <Logo />
           <nav aria-label="Main" className="hidden items-center gap-6 lg:gap-8 md:flex">
             {NAV.map((item) => (
@@ -217,7 +217,7 @@ export function Header() {
         </div>
 
         {/* Mobile menu button */}
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex items-center gap-1.5 shrink-0 sm:gap-2 md:hidden">
           <CurrencySelect />
           <button
           type="button"

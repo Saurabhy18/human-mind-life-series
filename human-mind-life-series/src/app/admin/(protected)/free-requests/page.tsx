@@ -182,7 +182,8 @@ export default async function AdminFreeRequestsPage({ searchParams }: Props) {
         <>
           {/* Desktop Table View */}
           <div className="hidden overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-xs lg:block">
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50/80 text-[0.7rem] font-semibold tracking-wider text-slate-500 uppercase">
                 <tr>
                   <th className="px-3 py-2">Ref / Date</th>
@@ -238,6 +239,7 @@ export default async function AdminFreeRequestsPage({ searchParams }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Mobile Card View */}

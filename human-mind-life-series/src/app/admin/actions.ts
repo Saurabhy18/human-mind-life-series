@@ -53,6 +53,9 @@ export async function updateStatusAction(formData: FormData): Promise<void> {
   updateOrderStatus(id, status, rawNote || null);
   // "Payment Verified" by the admin IS the server-side verification: it starts delivery/translation.
   if ((status === "verified" || status === "delivered") && order.payment_status !== "PAID") {
+    if (order.amount_paid != null && Math.round(Number(order.amount_paid) * 100) !== Math.round(Number(order.amount) * 100)) {
+      throw new Error(`Cannot verify order: Amount paid (₹${order.amount_paid}) does not match the required book price (₹${order.amount}).`);
+    }
     await markOrderPaid({
       orderId: id,
       provider: order.payment_provider === "cashfree" ? "cashfree" : "manual_upi",

@@ -150,20 +150,20 @@ export function GatewayCheckout({ selection, amount, currency }: { selection: Pu
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5">
       {user ? (
-        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex items-center justify-between">
-          <p>
+        <div className="rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink/80 flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-0 break-words">
             Ordering as <strong className="text-ink font-semibold">{user.fullName || user.email}</strong> ({user.email})
           </p>
-          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark">
+          <span className="rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-gold-dark shrink-0">
             Logged In
           </span>
         </div>
       ) : (
-        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex items-center justify-between">
+        <div className="rounded-xl border border-line bg-cream/40 px-4 py-3 text-xs text-muted flex flex-wrap items-center justify-between gap-2">
           <p className="text-ink/80 font-medium">Guest Checkout (No account required)</p>
           <a
             href={`/login?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : "/checkout")}`}
-            className="text-gold-dark font-medium hover:underline text-xs"
+            className="text-gold-dark font-medium hover:underline text-xs shrink-0"
           >
             Sign in
           </a>

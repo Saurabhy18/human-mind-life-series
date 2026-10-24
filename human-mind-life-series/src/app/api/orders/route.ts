@@ -13,6 +13,7 @@ import { getAuthenticatedUser, getCurrentUserRole, isAdmin } from "@/lib/server/
 import { checkoutMode, gatewayEnabled, upiEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
 import { isOrderStatus, type OrderStatus } from "@/lib/order-status";
+import { formatMoney } from "@/config/packages";
 
 export const runtime = "nodejs";
 
@@ -283,6 +284,12 @@ async function createUpiOrder(req: Request, ip: string, user: Awaited<ReturnType
   });
   const checked = await validatePurchase(selection.packageId, selection.items);
   if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
+
+  if (Math.round(data.amountPaid * 100) !== Math.round(checked.purchase.amount * 100)) {
+    return fail(422, `The payment amount must be exactly ${formatMoney(checked.purchase.amount, checked.purchase.currency)} (the book price).`, {
+      amountPaid: `The payment amount must be exactly ${formatMoney(checked.purchase.amount, checked.purchase.currency)}.`,
+    });
+  }
 
   if (utrExists(data.utr)) {
     return fail(409, "This UTR / Transaction ID has already been submitted.", {
