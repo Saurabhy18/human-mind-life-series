@@ -186,6 +186,51 @@ export function utrExists(utr: string): boolean {
   return !!getDb().prepare("SELECT 1 FROM orders WHERE utr = ? COLLATE NOCASE").get(utr);
 }
 
+/** Finds a recent, matching unpaid gateway order for the customer so multiple checkout submissions reuse the same order entry. */
+export function findPendingGatewayOrder(
+  email: string,
+  packageType: string,
+  amount: number,
+  items: { book_slug: string; target_language: string }[],
+  maxAgeMinutes = 30
+): Order | undefined {
+  if (!email) return undefined;
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT * FROM orders 
+      WHERE LOWER(email) = LOWER(?) 
+        AND payment_provider = 'cashfree' 
+        AND payment_status = 'PENDING' 
+        AND status = 'pending' 
+        AND package_type = ? 
+        AND amount = ?
+      ORDER BY id DESC LIMIT 5
+    `).all(email.trim(), packageType, amount) as Order[];
+
+    const cutoff = Date.now() - maxAgeMinutes * 60 * 1000;
+    for (const order of rows) {
+      if (order.created_at) {
+        const orderTime = new Date(order.created_at).getTime();
+        if (!Number.isNaN(orderTime) && orderTime < cutoff) continue;
+      }
+
+      const orderItems = getOrderItems(order.id);
+      if (orderItems.length !== items.length) continue;
+
+      const allMatch = items.every((expected, idx) => {
+        const actual = orderItems[idx];
+        return actual && actual.book_slug === expected.book_slug && actual.target_language === expected.target_language;
+      });
+
+      if (allMatch) return order;
+    }
+  } catch {
+    // If table/driver query fails, fall back to creating a new order safely
+  }
+  return undefined;
+}
+
 /** Creates the order and its ebooks in one transaction (an order never exists without its items). */
 export function createOrder(data: NewOrder): { id: number; ref: string } {
   const db = getDb();

@@ -67,6 +67,33 @@ export const requireAccount = cache(async (returnTo: string) => {
 });
 
 /** Orders placed with this email, newest first. Falls back to the local store if Supabase has none. */
+export function deduplicateUserOrders(orders: Order[]): Order[] {
+  const seenPending = new Set<string>();
+  const paidKeys = new Set<string>();
+
+  for (const o of orders) {
+    const isPaid = o.payment_status === "PAID" || o.status === "verified" || o.status === "delivered";
+    if (isPaid) {
+      paidKeys.add(`${o.package_type}:${o.product_slug}`);
+    }
+  }
+
+  const result: Order[] = [];
+  for (const o of orders) {
+    const isPaid = o.payment_status === "PAID" || o.status === "verified" || o.status === "delivered";
+    if (isPaid) {
+      result.push(o);
+      continue;
+    }
+    const key = `${o.package_type}:${o.product_slug}`;
+    if (paidKeys.has(key)) continue;
+    if (seenPending.has(key)) continue;
+    seenPending.add(key);
+    result.push(o);
+  }
+  return result;
+}
+
 export async function getUserOrders(
   supabase: Awaited<ReturnType<typeof createClient>>,
   email: string | undefined,
@@ -74,7 +101,7 @@ export async function getUserOrders(
   if (!email) return [];
   // Direct database query ensures immediate consistency with admin verifications
   const dbOrders = getOrdersByEmail(email);
-  if (dbOrders && dbOrders.length > 0) return dbOrders;
+  if (dbOrders && dbOrders.length > 0) return deduplicateUserOrders(dbOrders);
   try {
     const { data: ords, error } = await supabase
       .from("orders")
@@ -82,7 +109,7 @@ export async function getUserOrders(
       .ilike("email", email)
       .order("id", { ascending: false });
 
-    if (!error && ords && ords.length > 0) return ords as Order[];
+    if (!error && ords && ords.length > 0) return deduplicateUserOrders(ords as Order[]);
     return [];
   } catch {
     return [];

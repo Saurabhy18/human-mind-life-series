@@ -416,12 +416,6 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
               {notice}
             </p>
           )}
-          {!user && !loading && (
-            <p className="mt-4 rounded-xl border border-gold/40 bg-cream p-3 text-xs text-ink/80 flex items-center gap-2">
-              <IconShield width={16} height={16} className="text-gold-dark shrink-0" />
-              <span>You will be prompted to sign in to your account before completing payment.</span>
-            </p>
-          )}
           <button type="button" onClick={proceed} className={`btn-primary mt-5 w-full py-4 text-base ${canPay ? "" : "opacity-60"}`} aria-disabled={!canPay || undefined}>
             Proceed to Payment <IconArrowRight />
           </button>

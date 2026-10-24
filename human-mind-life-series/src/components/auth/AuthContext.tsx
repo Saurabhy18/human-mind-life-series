@@ -87,13 +87,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createSupabaseBrowserClient();
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event) => {
       if (ignore) return;
-      if (!session) {
-        await initAuth();
-      } else {
-        await initAuth();
-      }
+      // Skip initial event since initAuth() already ran above
+      if (event === "INITIAL_SESSION") return;
+      await initAuth();
     });
 
     return () => {

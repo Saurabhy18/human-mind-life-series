@@ -110,12 +110,13 @@ export const ENV = {
     // Everywhere else (local, preview, tests) we are pinned to sandbox, so no real money can move.
     const explicitEnv = str("CASHFREE_ENV").toLowerCase();
     const clientId = str("CASHFREE_CLIENT_ID");
-    const isTestKey = clientId.toLowerCase().startsWith("test");
+    const secretKey = str("CASHFREE_SECRET_KEY");
+    const isTestKey = clientId.toLowerCase().includes("test") || secretKey.toLowerCase().includes("test");
     const cashfreeEnv: "sandbox" | "production" =
-      explicitEnv === "production"
-        ? (isProd ? "production" : "sandbox")
-        : explicitEnv === "sandbox"
-          ? "sandbox"
+      explicitEnv === "sandbox"
+        ? "sandbox"
+        : explicitEnv === "production"
+          ? (isProd ? "production" : "sandbox")
           : isTestKey
             ? "sandbox"
             : (isProd ? "production" : "sandbox");

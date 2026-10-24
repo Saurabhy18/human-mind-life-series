@@ -12,12 +12,11 @@ try {
 }
 
 const isProd = process.env.NODE_ENV === "production";
-// Cashfree's hosted checkout (JS SDK + modal iframe) is only allowed when it is actually switched on.
-const cashfree = process.env.PAYMENT_PROVIDER === "cashfree" || process.env.PAYMENT_PROVIDER === "both" || !process.env.PAYMENT_PROVIDER;
-const cfScript = cashfree ? " https://sdk.cashfree.com https://*.cashfree.com" : "";
-const cfConnect = cashfree ? " https://*.cashfree.com" : "";
-const cfFrame = cashfree ? " https://*.cashfree.com" : "";
-const cfForm = cashfree ? " https://*.cashfree.com" : "";
+// Cashfree's hosted checkout (JS SDK + modal iframe) domains allowed in CSP.
+const cfScript = " https://sdk.cashfree.com https://*.cashfree.com";
+const cfConnect = " https://*.cashfree.com https://*.cashfree.net https://api.cashfree.com https://sandbox.cashfree.com";
+const cfFrame = " https://*.cashfree.com https://payments.cashfree.com https://payments-test.cashfree.com https://sandbox.cashfree.com";
+const cfForm = " https://*.cashfree.com https://sandbox.cashfree.com";
 
 // Signed download URLs may point to a private Google Cloud Storage bucket.
 const gcsConnect = process.env.BOOK_STORAGE_BUCKET
@@ -55,11 +54,7 @@ const securityHeaders = [
   },
   {
     key: "Permissions-Policy",
-    value: `camera=(), microphone=(), geolocation=(), payment=(${
-      cashfree
-        ? 'self "https://payments.cashfree.com" "https://payments-test.cashfree.com" "https://sandbox.cashfree.com"'
-        : ""
-    })`,
+    value: 'camera=(), microphone=(), geolocation=(), payment=(self "https://payments.cashfree.com" "https://payments-test.cashfree.com" "https://sandbox.cashfree.com")',
   },
   ...(isProd
     ? [
@@ -72,12 +67,19 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Limit build worker parallelism to reduce OS thread/process exhaustion.
+  compress: true,
+  poweredByHeader: false,
+
+  // Limit build worker parallelism and optimize module imports.
   experimental: {
     cpus: 2,
+    optimizePackageImports: ["lucide-react", "@cashfreepayments/cashfree-js"],
   },
 
-  poweredByHeader: false,
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 86400,
+  },
 
   // Dev only: allow a public tunnel to reach the development server.
   ...(isProd
@@ -114,6 +116,15 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: securityHeaders,
+      },
+      {
+        source: "/images/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
       },
       {
         source: "/admin/:path*",

@@ -2,12 +2,13 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { fieldErrors, orderSchema, sanitizeTracking } from "@/lib/validation";
-import { countFilteredOrders, createOrder, getOrder, getOrdersByEmail, itemsForOrders, listOrders, upsertCustomer, utrExists, type NewOrder } from "@/lib/server/orders";
+import { countFilteredOrders, createOrder, findPendingGatewayOrder, getOrder, getOrdersByEmail, itemsForOrders, listOrders, upsertCustomer, utrExists, type NewOrder } from "@/lib/server/orders";
 import { deleteScreenshot, MAX_SCREENSHOT_BYTES, saveScreenshot, UploadError } from "@/lib/server/uploads";
 import { rateLimit } from "@/lib/server/rate-limit";
 import { clientIp, hashIp, isSameOrigin } from "@/lib/server/request";
 import { parseItemsField, readSelection, validatePurchase, type ValidPurchase } from "@/lib/server/purchase";
 import { issueAccessToken } from "@/lib/server/fulfillment";
+import { deduplicateUserOrders } from "@/lib/server/account";
 import { getAuthenticatedUser, getCurrentUserRole, isAdmin } from "@/lib/server/auth";
 import { checkoutMode, gatewayEnabled, upiEnabled } from "@/lib/server/paymentService";
 import { logger, errorMessage } from "@/lib/server/logger";
@@ -100,7 +101,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const allUserOrders = getOrdersByEmail(email);
+  const allUserOrders = deduplicateUserOrders(getOrdersByEmail(email));
   const total = allUserOrders.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pagedOrders = allUserOrders.slice((page - 1) * pageSize, page * pageSize);
@@ -180,31 +181,51 @@ async function createGatewayOrder(req: Request, ip: string, user: Awaited<Return
   if (!checked.ok) return fail(422, checked.message, { [checked.field]: checked.message });
 
   try {
-    const customerEmail = (user?.email || data.customerEmail || "").toLowerCase();
+    const customerEmail = (data.customerEmail || user?.email || "").toLowerCase();
     if (!customerEmail) {
       return fail(422, "Please enter your email address to continue.", { customerEmail: "Please enter your email address." });
     }
     const customerName = (data.customerName || (typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
     const customerId = upsertCustomer({ email: customerEmail, name: customerName });
-    const { id, ref } = createOrder({
-      ...purchaseFields(checked.purchase),
-      amount_paid: null,
-      buyer_name: customerName,
-      email: customerEmail,
-      whatsapp: "",
-      // Gateway orders have no customer-entered UTR or screenshot; a unique placeholder keeps the schema's constraints.
-      utr: `GW-${crypto.randomUUID()}`,
-      screenshot_file: "",
-      screenshot_mime: "",
-      utm_json: (() => {
-        const t = sanitizeTracking(data.tracking);
-        return t ? JSON.stringify(t) : null;
-      })(),
-      ip_hash: hashIp(ip),
-      user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
-      payment_provider: "cashfree",
-      customer_id: customerId,
-    });
+
+    const pFields = purchaseFields(checked.purchase);
+    const existing = findPendingGatewayOrder(
+      customerEmail,
+      pFields.package_type || "individual",
+      pFields.amount,
+      (pFields.items ?? []).map((i) => ({ book_slug: i.book_slug, target_language: i.target_language })),
+      30
+    );
+
+    let id: number;
+    let ref: string;
+
+    if (existing) {
+      id = existing.id;
+      ref = existing.ref;
+    } else {
+      const created = createOrder({
+        ...pFields,
+        amount_paid: null,
+        buyer_name: customerName,
+        email: customerEmail,
+        whatsapp: "",
+        // Gateway orders have no customer-entered UTR or screenshot; a unique placeholder keeps the schema's constraints.
+        utr: `GW-${crypto.randomUUID()}`,
+        screenshot_file: "",
+        screenshot_mime: "",
+        utm_json: (() => {
+          const t = sanitizeTracking(data.tracking);
+          return t ? JSON.stringify(t) : null;
+        })(),
+        ip_hash: hashIp(ip),
+        user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
+        payment_provider: "cashfree",
+        customer_id: customerId,
+      });
+      id = created.id;
+      ref = created.ref;
+    }
     const order = getOrder(id)!;
     const token = issueAccessToken(id, "checkout");
     return NextResponse.json({
@@ -289,7 +310,7 @@ async function createUpiOrder(req: Request, ip: string, user: Awaited<ReturnType
   }
 
   try {
-    const customerEmail = (user?.email || data.email).toLowerCase();
+    const customerEmail = (data.email || user?.email || "").toLowerCase();
     const customerName = (data.buyerName || (typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || customerEmail.split("@")[0]).trim();
     const customerId = upsertCustomer({ email: customerEmail, name: customerName, whatsapp: data.whatsapp || null });
     const { id, ref } = createOrder({
