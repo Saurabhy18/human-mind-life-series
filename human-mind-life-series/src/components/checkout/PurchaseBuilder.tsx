@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_LANGUAGE } from "@/config/languages";
 import { formatMoney, type PackageId, type PurchasePackage, type PurchaseSelection } from "@/config/packages";
 import { useAuth } from "@/components/auth/AuthContext";
-import { IconArrowRight, IconCheck, IconCreditCard, IconQr, IconShield } from "../icons";
+import { IconArrowRight, IconCheck, IconCreditCard, IconShield } from "../icons";
 import { Price } from "../Price";
 import { ChargedInInrNote } from "../currency/ChargedInInrNote";
 import { OfferCountdown } from "../OfferCountdown";
@@ -187,7 +187,7 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                   Select your preferred payment option below to proceed.
                 </p>
 
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="mt-6 grid gap-4">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod("gateway")}
@@ -217,38 +217,6 @@ export function PurchaseBuilder({ books, packages, individualPrice, initial, mod
                     </div>
                     <p className="mt-3 text-xs leading-relaxed text-muted">
                       Cashfree Gateway: UPI (GPay/PhonePe/Paytm), Cards (Debit/Credit), Net Banking & Wallets. Unlocks your library immediately.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("upi")}
-                    className={`relative rounded-2xl border-2 p-5 text-left transition-all ${
-                      paymentMethod === "upi"
-                        ? "border-gold bg-gold/10 shadow-sm ring-1 ring-gold"
-                        : "border-line bg-paper hover:border-gold/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${paymentMethod === "upi" ? "bg-gold/20 text-gold-dark" : "bg-cream text-muted"}`}>
-                          <IconQr width={22} height={22} />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-ink">Pay via UPI QR Code</p>
-                          <span className="inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-800 uppercase">
-                            Admin Verified
-                          </span>
-                        </div>
-                      </div>
-                      {paymentMethod === "upi" && (
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gold-dark text-white">
-                          <IconCheck width={14} height={14} />
-                        </div>
-                      )}
-                    </div>
-                    <p className="mt-3 text-xs leading-relaxed text-muted">
-                      Scan QR code with any UPI app, enter your UTR number, and upload payment screenshot for admin verification.
                     </p>
                   </button>
                 </div>
