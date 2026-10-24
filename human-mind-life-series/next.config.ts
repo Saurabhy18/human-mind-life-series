@@ -74,6 +74,8 @@ const nextConfig: NextConfig = {
   experimental: {
     cpus: 2,
     optimizePackageImports: ["lucide-react", "@cashfreepayments/cashfree-js"],
+    // Nudge coding agents when a security release of Next.js is available.
+    agentUpgrade: "security",
   },
 
   images: {

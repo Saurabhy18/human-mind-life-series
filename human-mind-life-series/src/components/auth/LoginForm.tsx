@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "./AuthContext";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
+  const { refresh: refreshAuth } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,10 +54,20 @@ export function LoginForm() {
         }
       }
 
+      // Pull the signed-in user into the auth context before navigating.
+      // setSession() above normally emits SIGNED_IN, which AuthProvider listens
+      // for, but it reports some failures by returning an error instead of
+      // throwing, and then no event is emitted at all. Relying on it left the
+      // header showing a signed-out state until the next full page load, so
+      // refresh explicitly: the login response already proves we are signed in.
+      await refreshAuth();
+
       // Admins land on the admin dashboard unless a specific page asked them to come back.
       const explicitNext = searchParams.get("next");
-      router.push(!explicitNext && data.user?.role === "admin" ? "/admin" : next);
+      // Re-render server components with the new session cookie first, so the
+      // destination is not served from the logged-out entry in the router cache.
       router.refresh();
+      router.push(!explicitNext && data.user?.role === "admin" ? "/admin" : next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
