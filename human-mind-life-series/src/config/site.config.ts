@@ -23,7 +23,7 @@ export const CONFIG = {
    * server's environment (read at build time). Used for SEO, canonical URLs,
    * the sitemap, sharing images and email links.
    */
-  SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || "https://www.example.com",
+  SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || "https://humanmind-lifeseries.com",
   /**
    * The person or business that sells the books (shown in the copyright line
    * and the legal pages). Replace with your legal / business name if you wish.
