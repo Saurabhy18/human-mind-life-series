@@ -11,6 +11,10 @@ const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces", dis
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
+verification: {
+  google: "kEMhnadVSCln880hrhhHijudnFfanoucoffu6KrLGLWU",
+},
+metadataBase: new URL(SITE_URL),
   metadataBase: new URL(SITE_URL),
   title: {
     default: `${CONFIG.SITE_NAME} — Psychology & Personal Growth Books`,
