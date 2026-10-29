@@ -12,7 +12,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 
 export const metadata: Metadata = {
 verification: {
-  google: "kEMhnadVSCln880hrhhHijudnFfanoucoffu6KrLGLWU",
+  google: "kEMhnadVSCln880rhhhIjudnFfanoucofFu6KrLGLVU" ,
 },
   metadataBase: new URL(SITE_URL),
   title: {
