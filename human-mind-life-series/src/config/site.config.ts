@@ -118,7 +118,7 @@ export const CONFIG = {
   /** Google Analytics 4 Measurement ID, e.g. "G-ABC123XYZ". "" = off. */
   GOOGLE_ANALYTICS_ID: process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID || "",
   /** Google Ads tag ID, e.g. "AW-123456789". "" = off. */
-  GOOGLE_ADS_ID: process.env.NEXT_PUBLIC_GOOGLE_ADS_ID || "",
+  GOOGLE_ADS_ID: "AW-18505196310",
   /**
    * Google Ads conversion label for "payment details submitted", e.g.
    * "AbC-D_efG-h12_34-567". Found in Google Ads → Goals → Conversions.
